@@ -32,6 +32,40 @@ export function mount(root, ctx) {
     );
   }
 
+  function privacyToggle() {
+    const granted = ctx.settings.get().telemetryConsent === 'granted';
+    return h(
+      'div',
+      { class: 'setting' },
+      h(
+        'div',
+        {},
+        h('b', {}, 'Share anonymous playtest data'),
+        h(
+          'p',
+          { class: 'fine' },
+          'Moves, purchases, results, timings, settings and a random player id — never your name, account, IP address, cookies or tracking.',
+        ),
+      ),
+      h(
+        'button',
+        {
+          class: `switch${granted ? ' on' : ''}`,
+          type: 'button',
+          role: 'switch',
+          'aria-checked': String(granted),
+          'aria-label': 'Share anonymous playtest data',
+          dataset: { testid: 'setting-telemetryConsent' },
+          onclick: () => {
+            ctx.settings.set({ telemetryConsent: granted ? 'denied' : 'granted' });
+            paint();
+          },
+        },
+        granted ? 'On' : 'Off',
+      ),
+    );
+  }
+
   function paint() {
     const s = ctx.settings.get();
     const bounty = Object.entries(CAPTURE_BOUNTY)
@@ -64,6 +98,8 @@ export function mount(root, ctx) {
       h('h2', { class: 'rule-head' }, 'House rules'),
       h('p', { class: 'fine' }, 'These change the game, so every recorded session notes which rules were on.'),
       toggle('captureBounty', 'Capture bounty', `Capturing an enemy piece earns gold: ${bounty}.`),
+      h('h2', { class: 'rule-head' }, 'Privacy'),
+      privacyToggle(),
       h(
         'div',
         { class: 'actions' },

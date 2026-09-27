@@ -767,6 +767,47 @@ h3 {
   margin: 10px 0 12px;
 }
 
+/* ------------------------------------------------------------ consent card */
+.dialog.consent {
+  width: min(480px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.consent-lists {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 20px;
+  margin: 14px 0;
+  text-align: left;
+}
+
+.consent-col h4 {
+  margin: 0 0 4px;
+  font: 600 var(--fs-xs) var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.consent-col ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.consent-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.consent-actions .btn {
+  flex: 1;
+  padding: 11px 10px;
+}
+
 .promo-btn {
   width: 60px;
   height: 60px;

@@ -1,0 +1,9 @@
+name = "chass-telemetry"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Filled in by `pnpm run db:create` (prints the id) — see README.
+[[d1_databases]]
+binding = "DB"
+database_name = "chass-telemetry"
+database_id = "101b33f0-aaf0-4b1a-b81f-39c2d0915548"

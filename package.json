@@ -10,7 +10,8 @@
     "test:cov": "node --test --experimental-test-coverage tests/*.test.js",
     "test:e2e": "node --test e2e/smoke.test.mjs",
     "build": "node tools/build.mjs",
-    "sim": "node tools/simulate.mjs"
+    "sim": "node tools/simulate.mjs",
+    "telemetry:pull": "node tools/pull-telemetry.mjs"
   },
   "engines": {
     "node": ">=20"

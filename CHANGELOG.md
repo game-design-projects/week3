@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **Anonymous playtest telemetry collector:** a Cloudflare Worker + D1 database (`server/telemetry/`, deployed as `chass-telemetry`) that accepts finished sessions at `POST /v1/sessions` and serves them back to the designer at `GET /v1/sessions` (bearer-token protected). It stores no IP address, User-Agent or geo data by design. `pnpm telemetry:pull` (`tools/pull-telemetry.mjs`) downloads sessions into an Import-ready JSON file.
+- **Explicit opt-in consent for telemetry.** A book-style card appears over the menu on first launch asking to share anonymous playtest data or keep it on-device (`src/ui/consent.js`); nothing is sent before a choice is made. The decision (`settings.telemetryConsent`: `unset`/`granted`/`denied`) can be changed any time from a new **Privacy** section in Settings, and the Playtest data screen states whether sharing is currently on.
+- `src/telemetry/store.js`'s `createStore` takes a `canSend()` gate; remote sends are skipped (and logged) unless it returns true. `TELEMETRY.endpoint` in `src/config.js` now points at the deployed collector.
+- Unit tests for the worker handler (`tests/telemetry-worker.test.js`, fake D1) and for consent gating in the store/settings; e2e coverage for the consent card, accepted/declined telemetry delivery (intercepted, never hitting production), and the Settings Privacy switch.
+
+### Changed
+- `e2e/smoke.test.mjs`'s `open()` helper now dismisses the first-run consent card (declining by default) before driving the rest of the game.
+
 ## [0.4.1] - 2026-09-26
 
 ### Changed

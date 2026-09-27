@@ -16,8 +16,8 @@ A week-3 prototype for NYU Game Design. There is no setup phase. Each turn you e
 | **Level 1 "The Keep"** | Your lone king on e1 with **16 gold** vs a garrison that is already on the board (K g8, R d8, B e7, P f7 g7 h7) **with 5 gold of its own** to reinforce with. Enemy AI plays at *Captain* strength. Buy, fight, earn, and checkmate it. |
 | **Free battle** | Two lone kings, the same purse each (8 / 12 / 20 / 39). Play the computer (Recruit / Captain / Warlord) or a friend on the same device. |
 | **Demo: AI vs AI** | Two AIs start from lone kings with the same purse and build their armies during the game. The only difference between them is search depth (e.g. Warlord, 4 plies, vs Recruit, 1 ply). It plays itself with a running score, commentary for each move (depth, positions searched, what it bought, mates seen) and an evaluation bar. It shows the strategy ladder directly: thinking further ahead buys and plays better. |
-| **Settings** | Sound, legal-move dots, coordinates, animations, campaign AI strength, and the *capture bounty* house rule (recorded with every session). |
-| **Playtest data** | Every session is recorded locally: win rate per purchased army, what players buy, how games end, a learning curve, and the full PGN. Export JSON/CSV, import files from other testers. |
+| **Settings** | Sound, legal-move dots, coordinates, animations, campaign AI strength, the *capture bounty* house rule (recorded with every session), and a Privacy switch for anonymous telemetry sharing. |
+| **Playtest data** | Every session is recorded locally: win rate per purchased army, what players buy, how games end, a learning curve, and the full PGN. Export JSON/CSV, import files from other testers, and see whether anonymous sharing is currently on. |
 
 **Rules:** normal chess (via chess.js) with no castling, plus the shop. On your turn, instead of moving, you may buy one piece and drop it on an empty square of ranks 1–2 (pawns on rank 2 only; they can still double-step). Buying is your move, so it costs a tempo. You may own at most one standard set's worth of each piece on the board (1 Q, 2 R, 2 B, 2 N, 8 P). A drop may not leave your king in check, and it *can* block a check, so you are only mated when no move and no purchase saves you. Captures pay pawn/knight/bishop 1 g, rook 2 g, queen 4 g. Checkmate wins; stalemate, threefold repetition and the 50-move rule are draws. It is not a draw by "insufficient material" while someone can still afford a piece.
 
@@ -53,8 +53,22 @@ A good heuristic, per the lecture, applies at every stage, sits between gut feel
 Balancing is the hard part, so the prototype ships with two tools for it:
 
 - **Playtest telemetry (in the game).** Each session records: mode, level, AI level, starting gold, attempt number, the house rules in force, both sides' start (placement, gold), every purchase (`drops`: ply, piece, square, cost), what each side bought in total (`bought`), start and final FEN, full PGN (drops written `N@b1`), a per-ply material timeline, and the result and end reason (checkmate, resign, stalemate, threefold, 50-move, insufficient, abandoned). Records carry `balanceVersion` (currently `b5`) so data from different rule sets can be separated.
-  - **Where it goes:** local-first. Data lives in the browser's localStorage, with nothing sent anywhere. Remote testers (e.g. on itch.io) click **"Download your play data"** on the result screen and send you the JSON; you **Import** it on the Playtest data screen, which dedupes by session id. To collect automatically, set `TELEMETRY.endpoint` in `src/config.js` to a URL that accepts POSTed JSON (sent with `sendBeacon`).
+  - **Where it goes:** local-first, always. Data lives in the browser's localStorage, and nothing is ever sent off the device without an explicit choice — see **Consent & privacy** below. Any tester can click **"Download your play data"** on the result screen and send you the JSON; you **Import** it on the Playtest data screen, which dedupes by session id.
 - **AI-vs-AI simulator:** `pnpm sim -- --gold 14,16 --enemy-gold 3,5 --games 30` plays Level 1 with an AI standing in for the player (both sides shop) and prints win/draw/loss, enemy purchases and first buys for every (player gold, enemy gold) pair. See [docs/balance-sim.md](docs/balance-sim.md).
+
+### Consent & privacy
+
+The first time the game runs, a card over the menu asks the player to opt in before anything leaves the device — declining (or just not deciding) means telemetry stays local-first exactly as above. The choice can be changed any time in **Settings → Privacy**, and the **Playtest data** screen always states whether sharing is currently on.
+
+- **What's shared, if you opt in:** moves and purchases, results and timings, your settings/house rules, and a random player id generated on first run. **Never shared:** your name, account, IP address, cookies, or any cross-site tracking — the collector itself is built not to read or store IP/User-Agent/geo (see the comment at the top of `server/telemetry/src/index.js`).
+- **Where it goes:** a small Cloudflare Worker + D1 database (`server/telemetry/`), deployed at `https://chass-telemetry.lishuyustevenli.workers.dev`. `TELEMETRY.endpoint` in `src/config.js` points at it; `src/telemetry/store.js` only POSTs a finished session when `settings.telemetryConsent === 'granted'` (via `sendBeacon`, falling back to `fetch(..., { keepalive: true })`).
+- **Pulling collected data:** `pnpm telemetry:pull` (`tools/pull-telemetry.mjs`) downloads recent sessions into `telemetry-export-<date>.json` (gitignored) — same shape the dashboard's Import expects. It reads the read-token from `$CHASS_READ_TOKEN` or a local `.telemetry-read-token` file (gitignored, `chmod 600`, never committed).
+- **Redeploying the collector:**
+  ```bash
+  cd server/telemetry
+  PATH=/opt/homebrew/bin:$PATH npx -y wrangler@4 deploy   # wrangler 4 needs Node ≥22
+  ```
+  Schema changes go in a new `migrations/NNNN_*.sql` file, applied with `PATH=/opt/homebrew/bin:$PATH npx -y wrangler@4 d1 execute chass-telemetry --remote --file=./migrations/NNNN_*.sql`.
 
 **Everything tunable lives in [`src/config.js`](src/config.js):** prices, caps, bounties, drop zones, king start squares, AI presets (search depth, quiescence, randomness window, time cap, how much the AI values unspent gold), the level (player gold, enemy garrison and enemy gold, AI preset) and free-battle purses. Bump `BALANCE_VERSION` when you change any of them.
 
@@ -71,14 +85,15 @@ src/core/               rules: army (prices/caps/labels), placement (zones, FEN,
                         start (starting positions), game (Match: chess.js + shop, drops, bounty)
 src/ai/                 search.js (alpha-beta + quiescence), evaluate.js, worker.js (Web Worker),
                         client.js, fastchess.js (the only file touching chess.js internals)
-src/telemetry/          store (localStorage + export/import), session recorder, stats
-src/settings.js         player settings + house rules (persisted per browser)
-src/ui/                 board component, sounds, screens (menu, battle, free, demo, settings, dashboard, howto)
+src/telemetry/          store (localStorage + export/import, opt-in remote send), session recorder, stats
+src/settings.js         player settings + house rules + telemetry consent (persisted per browser)
+src/ui/                 board component, sounds, consent card, screens (menu, battle, free, demo, settings, dashboard, howto)
 styles/                 tokens.css (design tokens) + main.css
 vendor/chess.js         chess.js 1.4.0 (BSD-2), vendored
 assets/pieces/          Cburnett SVG pieces (BSD-3)
-tools/                  serve.mjs (dev server), build.mjs (dist/ for itch), simulate.mjs (balance sim)
-tests/, e2e/            node:test unit tests; Chrome smoke test via playwright-core
+tools/                  serve.mjs (dev server), build.mjs (dist/ for itch), simulate.mjs (balance sim), pull-telemetry.mjs
+server/telemetry/       Cloudflare Worker + D1 telemetry collector (own package.json/wrangler.toml — not part of the game build)
+tests/, e2e/            node:test unit tests (incl. the telemetry worker); Chrome smoke test via playwright-core
 ```
 
 ## Development
@@ -89,7 +104,8 @@ pnpm dev             # http://localhost:5173  (add ?debug=1 for verbose console 
 pnpm test            # unit tests (node:test)
 pnpm test:e2e        # drives your installed Google Chrome headlessly; screenshots → e2e/artifacts/
 pnpm sim -- --gold 16 --enemy-gold 5 --games 30   # balance simulator (flags documented at the top of tools/simulate.mjs)
-pnpm build           # dist/ = the folder uploaded to itch.io
+pnpm telemetry:pull  # download opted-in playtest sessions from the collector → telemetry-export-<date>.json
+pnpm build           # dist/ = the folder uploaded to itch.io (server/telemetry/ and any token file are never copied in)
 ```
 
 ### CI

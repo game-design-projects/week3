@@ -3,7 +3,10 @@
 // and survive refreshes. When storage is unavailable (sandboxed itch.io
 // iframe, Safari private mode, quota) the store keeps working in memory for
 // the page lifetime — use Export so the data isn't lost.
-// If TELEMETRY.endpoint is set, every saved session is also POSTed there.
+// If TELEMETRY.endpoint is set AND the player has opted in (`canSend()`
+// returns true — wired to settings.telemetryConsent === 'granted' in
+// src/main.js), every saved session is also POSTed there. Nothing is ever
+// sent before that consent is granted.
 
 import { APP_VERSION, TELEMETRY } from '../config.js';
 import { createLogger } from '../lib/log.js';
@@ -74,6 +77,7 @@ function resolveStorage(opts) {
  * @param {number} [opts.maxSessions]
  * @param {string|null} [opts.endpoint]
  * @param {(url: string, body: string) => any} [opts.send]
+ * @param {() => boolean} [opts.canSend] consent gate: sendRemote is a no-op unless this returns true
  */
 export function createStore(opts = {}) {
   const {
@@ -81,6 +85,7 @@ export function createStore(opts = {}) {
     maxSessions = TELEMETRY.maxSessions,
     endpoint = TELEMETRY.endpoint,
     send = defaultSend,
+    canSend = () => false,
   } = opts;
   let storage = resolveStorage(opts);
   let available = !!storage;
@@ -172,6 +177,10 @@ export function createStore(opts = {}) {
 
   const sendRemote = (session) => {
     if (!endpoint) return;
+    if (!canSend()) {
+      log.debug('telemetry upload skipped (no consent)', session.id);
+      return;
+    }
     const body = JSON.stringify(session);
     try {
       Promise.resolve(send(endpoint, body)).catch((e) => log.warn('telemetry upload failed:', e?.message ?? e));

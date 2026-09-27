@@ -1,0 +1,17 @@
+{
+  "name": "chass-telemetry-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker + D1 collector for Chess Battle Simulator's anonymous playtest telemetry.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "db:create": "wrangler d1 create chass-telemetry",
+    "db:migrate": "wrangler d1 execute chass-telemetry --remote --file=./migrations/0001_init.sql",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

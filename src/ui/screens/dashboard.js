@@ -199,6 +199,16 @@ export function mount(root, ctx) {
         ),
       ),
       ctx.store.available ? null : h('p', { class: 'notice' }, 'Storage is blocked in this browser — data lasts only until this tab closes. Use Export JSON.'),
+      (() => {
+        const consent = ctx.settings.get().telemetryConsent;
+        const text =
+          consent === 'granted'
+            ? 'Sharing is on: your finished sessions are sent to the collector automatically.'
+            : consent === 'denied'
+              ? 'Sharing is off: everything below stays on this device. Turn it on in Settings → Privacy.'
+              : 'You have not decided whether to share data yet — see the card on the menu, or Settings → Privacy.';
+        return h('p', { class: 'notice', dataset: { testid: 'dash-consent-note' } }, text);
+      })(),
       all.length === 0
         ? h(
             'div',

@@ -7,6 +7,7 @@ import { createLogger } from './lib/log.js';
 
 const log = createLogger('settings');
 export const SETTINGS_KEY = 'cbs.settings.v1';
+const TELEMETRY_CONSENT_VALUES = ['unset', 'granted', 'denied'];
 
 /** Merge stored values over defaults, dropping unknown keys / wrong types. */
 export function sanitize(raw) {
@@ -16,6 +17,7 @@ export function sanitize(raw) {
     if (typeof raw[k] === typeof def) out[k] = raw[k];
   }
   if (!(out.campaignAI in AI_PRESETS)) out.campaignAI = DEFAULT_SETTINGS.campaignAI;
+  if (!TELEMETRY_CONSENT_VALUES.includes(out.telemetryConsent)) out.telemetryConsent = DEFAULT_SETTINGS.telemetryConsent;
   return out;
 }
 
