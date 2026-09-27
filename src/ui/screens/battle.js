@@ -15,6 +15,8 @@ import { AI_MIN_THINK_MS, AI_PRESETS, FEEL, LEVELS, MATE_VALUE, PIECE_NAMES, PIE
 import { armyLabel } from '../../core/army.js';
 import { Match } from '../../core/game.js';
 import { buildFen } from '../../core/placement.js';
+import { cleanNickname, NICKNAME_MAX } from '../../core/scores.js';
+import { buildSubmission, loadNickname, saveNickname, submitScore } from '../../leaderboard.js';
 import { randomSeed } from '../../lib/rng.js';
 import { createBoard, piecesFromBoard } from '../board.js';
 import { downloadText, fill, formatDuration, h, pieceImg } from '../dom.js';
@@ -60,9 +62,10 @@ export function mount(root, ctx, params) {
     feel: { effects: settings.effects, effective: feel(), sound: settings.sound },
   });
   const startFen = buildFen(params.white.placement, params.black.placement);
+  const startReserve = { w: params.white.reserve ?? 0, b: params.black.reserve ?? 0 }; // Match.reserve changes; the leaderboard needs the start
   const match = new Match({
     startFen,
-    reserve: { w: params.white.reserve ?? 0, b: params.black.reserve ?? 0 },
+    reserve: startReserve,
     rules: rules.captureBounty ? {} : { bounty: null },
   });
   rec.startBattle({ white: params.white, black: params.black, startFen });
@@ -80,6 +83,8 @@ export function mount(root, ctx, params) {
   let evalWhite = 0; // last AI evaluation, centipawns from White's view (demo)
   let evalShown = 50; // eval bar fill (% White) currently displayed
   const notes = []; // demo commentary, newest first
+  // Leaderboard submission (Level 1 wins only): 'idle' | 'sending' | 'done' | 'error'.
+  const lb = { state: 'idle', nickname: loadNickname(), error: null, result: null };
   // Gold still "in flight" as coins: the purse shows reserve − pending until the coins land.
   const pendingGold = { w: 0, b: 0 };
 
@@ -663,8 +668,102 @@ export function mount(root, ctx, params) {
     }
   }
 
+  // ---------------------------------------------------------------- leaderboard (Level 1 wins)
+  /** Only a Level 1 checkmate by the player (not free, demo or hotseat) can go on the leaderboard. */
+  const leaderboardEligible = (status) =>
+    params.mode === 'level' && !!level && !hotseat && !demo && status.winner === level.playerSide && status.reason === 'checkmate';
+
+  /** Paint the "Submit to the leaderboard" block into `el` from the `lb` state. */
+  function paintLeaderboard(el) {
+    const moves = Math.ceil(match.plies() / 2);
+    const goldLeft = match.reserve[level.playerSide];
+    const boardName = presetOf('b').label;
+    const head = h(
+      'div',
+      { class: 'lb-head' },
+      h('span', {}, 'Leaderboard'),
+      h('span', { class: 'lb-score num', dataset: { testid: 'lb-score' } }, `${moves} moves · ${goldLeft} g left`),
+    );
+    if (!rules.captureBounty) {
+      return fill(el, head, h('p', { class: 'fine', dataset: { testid: 'lb-house-rules' } }, 'Only games with the standard rules are ranked. Turn Capture bounty back on in Settings to post a score.'));
+    }
+    if (lb.state === 'done' && lb.result) {
+      const r = lb.result;
+      const line = r.improved
+        ? [h('b', { class: 'num' }, `You're #${r.rank} of ${r.total}`), ` on the ${boardName} board.`]
+        : [`Your best still stands: `, h('b', { class: 'num' }, `#${r.rank} of ${r.total}`), ` with ${r.best.moves} moves and ${r.best.goldLeft} g.`];
+      return fill(
+        el,
+        head,
+        h('p', { class: 'lb-done', role: 'status', dataset: { testid: 'lb-result' } }, line),
+        h('button', { class: 'link', type: 'button', dataset: { testid: 'lb-open' }, onclick: () => ctx.go('leaderboard', { ai: params.aiPreset }) }, 'See the leaderboard'),
+      );
+    }
+    const sending = lb.state === 'sending';
+    const input = h('input', {
+      class: 'lb-name',
+      type: 'text',
+      name: 'nickname',
+      value: lb.nickname,
+      maxlength: String(NICKNAME_MAX * 2), // code points vs UTF-16; the real check is cleanNickname
+      placeholder: 'Nickname',
+      autocomplete: 'nickname',
+      spellcheck: 'false',
+      'aria-label': 'Nickname for the leaderboard',
+      'aria-invalid': lb.error && lb.state !== 'error' ? 'true' : null,
+      disabled: sending,
+      dataset: { testid: 'lb-nickname' },
+      oninput: (e) => (lb.nickname = e.target.value),
+    });
+    const label = sending ? 'Sending…' : lb.state === 'error' ? 'Retry' : 'Submit';
+    return fill(
+      el,
+      head,
+      h(
+        'form',
+        { class: 'lb-form', onsubmit: (e) => (e.preventDefault(), submitToLeaderboard(el)) },
+        input,
+        h('button', { class: 'btn', type: 'submit', disabled: sending, dataset: { testid: 'lb-submit' } }, label),
+      ),
+      lb.error ? h('p', { class: 'lb-error', role: 'alert', dataset: { testid: 'lb-error' } }, lb.error) : null,
+      h('p', { class: 'fine' }, `Submitting publishes your nickname and this game's moves on the ${boardName} board.`),
+    );
+  }
+
+  async function submitToLeaderboard(el) {
+    if (lb.state === 'sending') return;
+    const check = cleanNickname(lb.nickname);
+    if (!check.ok) {
+      lb.state = 'idle';
+      lb.error = check.error;
+      paintLeaderboard(el);
+      el.querySelector('input')?.focus();
+      return;
+    }
+    lb.nickname = check.nickname;
+    saveNickname(check.nickname);
+    lb.state = 'sending';
+    lb.error = null;
+    paintLeaderboard(el);
+    const submission = buildSubmission({ match, reserve: startReserve, levelId: level.id, aiPreset: params.aiPreset ?? 'normal', rules, playerId: ctx.store.playerId, nickname: check.nickname });
+    try {
+      lb.result = await submitScore(submission);
+      lb.state = 'done';
+      ctx.sound.play('buy');
+    } catch (e) {
+      ctx.log.warn('leaderboard submit failed', e?.kind, e?.message);
+      // 4xx: the server refused this game or name; say why and let them edit. Otherwise: retry.
+      lb.state = e?.kind === 'rejected' ? 'idle' : 'error';
+      lb.error = e?.message ?? 'Something went wrong.';
+      ctx.toast(e?.kind === 'rejected' ? `Not submitted: ${lb.error}` : lb.error, 'warn');
+    }
+    if (alive && el.isConnected) paintLeaderboard(el);
+  }
+
   function showResult(status) {
     const s = ctx.store.sessions().at(-1);
+    const lbEl = leaderboardEligible(status) ? h('section', { class: 'lb-submit', 'aria-label': 'Submit to the leaderboard', dataset: { testid: 'lb-section' } }) : null;
+    if (lbEl) paintLeaderboard(lbEl);
     const win = !hotseat && status.winner === 'w';
     const draw = status.winner === null;
     const title = hotseat ? (draw ? 'Draw' : `${SIDE[status.winner]} wins`) : draw ? 'Draw' : win ? 'Victory' : 'Defeat';
@@ -694,9 +793,10 @@ export function mount(root, ctx, params) {
           h('dd', { class: 'num' }, `${match.earned().w} g / ${match.earned().b} g`),
           s?.attempt ? [h('dt', {}, 'Attempt'), h('dd', { class: 'num' }, `#${s.attempt}`)] : null,
         ),
+        lbEl,
         h(
           'div',
-          { class: 'actions column' },
+          { class: lbEl ? 'actions' : 'actions column' },
           h('button', { class: 'btn primary', type: 'button', dataset: { testid: 'result-rematch' }, onclick: again }, 'Play again'),
           params.mode === 'free' ? h('button', { class: 'btn', type: 'button', dataset: { testid: 'result-change' }, onclick: () => ctx.go('free', {}) }, 'Change purse or opponent') : null,
           h('button', { class: 'btn quiet', type: 'button', dataset: { testid: 'result-menu' }, onclick: () => ctx.go('menu') }, 'Menu'),
@@ -713,7 +813,7 @@ export function mount(root, ctx, params) {
         ),
       ),
     );
-    modal.querySelector('.btn.primary')?.focus();
+    modal.querySelector('[data-testid="result-rematch"]')?.focus();
   }
 
   paintBoard();

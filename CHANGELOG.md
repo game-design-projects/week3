@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-27
+
+### Added
+- **Server-validated leaderboard for Level 1.** One board per AI difficulty (Recruit / Captain / Warlord) under the current balance version. Fewest player moves to checkmate wins, more gold left breaks a tie, then the earlier score. Each player keeps only their best line per board.
+- `POST /v1/scores`, `GET /v1/scores` and `DELETE /v1/scores/:id` on the existing `chass-telemetry` Worker, with a new `scores` table (`server/telemetry/migrations/0002_leaderboard.sql`, same D1 database). The server replays every submission with the game's own rules code and computes the score itself. It rejects stale levels or balance versions, any start other than the level's official one, illegal moves or drops, games over 400 plies, games that don't end in the player's checkmate, bodies over 64 KB, and bad nicknames. Only the default rules (capture bounty on) are ranked.
+- `src/core/scores.js`: the shared leaderboard rules (replay and score a game, nickname cleaning with a short blocklist, ranking order), imported by both the game and the Worker.
+- `src/leaderboard.js`: the client. It builds a submission from the live `Match` (the original level start plus the full move/drop list, not the FEN rebased after a drop), submits it, fetches boards, and remembers the last nickname.
+- The result card after a Level 1 win has a **Submit to the leaderboard** block: a nickname field, one line on what gets published, then "You're #N of M". Offline or server errors show a toast and a Retry button, and a refused name or game says why. Nothing is sent until Submit is pressed. This is separate from telemetry consent.
+- **Leaderboard** screen (menu entry III), set as a printed results table: difficulty tabs, dotted leaders, your own line highlighted (appended below the top 20 if needed), your rank beside it, and loading, empty and error states. Fits 1280×720 without page scroll and works at 390 px.
+- Tests: `tests/scores.test.js` (replay, tampering, nicknames, ordering; real Level 1 mate lines in `tests/fixtures/l1-games.js`) and `tests/leaderboard-worker.test.js` (fake D1: accept/reject, better-only upsert, ranking and tiebreaks, no player ids in GET, token-guarded DELETE, CORS). E2E with every `/v1/scores` request intercepted: the leaderboard screen, a scripted Level 1 win that submits the exact move list (checked with the server's replay), offline retry, and no form after a loss, a free-battle win or with the bounty off.
+
+### Changed
+- The main menu gains **Leaderboard**; later entries are renumbered.
+- The result dialog scrolls inside itself if it is taller than the window. With the leaderboard block, its buttons sit in a row.
+
+### Security
+- The leaderboard stores no IP address, User-Agent or geo data. GET never returns player ids; row ids appear only with the `READ_TOKEN` bearer, which `DELETE` also requires. CORS on `/v1/scores` is `*` without credentials, and `DELETE` is only listed on the per-row path. Nicknames are restricted to letters, digits, space, `_` and `-` (no HTML) and rendered as text.
+
 ## [0.5.0] - 2026-09-26
 
 ### Added

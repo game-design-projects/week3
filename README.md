@@ -15,6 +15,7 @@ A week-3 prototype for NYU Game Design. There is no setup phase. Each turn you e
 |---|---|
 | **Level 1 "The Keep"** | Your lone king on e1 with **16 gold** vs a garrison that is already on the board (K g8, R d8, B e7, P f7 g7 h7) **with 5 gold of its own** to reinforce with. Enemy AI plays at *Captain* strength. Buy, fight, earn, and checkmate it. |
 | **Free battle** | Two lone kings, the same purse each (8 / 12 / 20 / 39). Play the computer (Recruit / Captain / Warlord) or a friend on the same device. |
+| **Leaderboard** | Level 1's public results table, one board per AI difficulty (Recruit / Captain / Warlord): the fewest moves to checkmate the Keep, gold left as the tiebreak. Win Level 1 and submit your game from the result card; your own line is highlighted. Every submitted game is replayed on the server before it is ranked. |
 | **Demo: AI vs AI** | Two AIs start from lone kings with the same purse and build their armies during the game. The only difference between them is search depth (e.g. Warlord, 4 plies, vs Recruit, 1 ply). It plays itself with a running score, commentary for each move (depth, positions searched, what it bought, mates seen) and an evaluation bar. It shows the strategy ladder directly: thinking further ahead buys and plays better. |
 | **Settings** | Sound, legal-move dots, coordinates, animations, **effects (Full / Subtle / Off)**, campaign AI strength, the *capture bounty* house rule (the rule and the effects level are recorded with every session), and a Privacy switch for anonymous telemetry sharing. |
 | **Playtest data** | Every session is recorded locally: win rate per purchased army, what players buy, how games end, a learning curve, and the full PGN. Export JSON/CSV, import files from other testers, and see whether anonymous sharing is currently on. |
@@ -89,7 +90,23 @@ The first time the game runs, a card over the menu asks the player to opt in bef
   cd server/telemetry
   PATH=/opt/homebrew/bin:$PATH npx -y wrangler@4 deploy   # wrangler 4 needs Node ≥22
   ```
-  Schema changes go in a new `migrations/NNNN_*.sql` file, applied with `PATH=/opt/homebrew/bin:$PATH npx -y wrangler@4 d1 execute chass-telemetry --remote --file=./migrations/NNNN_*.sql`.
+  Schema changes go in a new `migrations/NNNN_*.sql` file, applied with `PATH=/opt/homebrew/bin:$PATH npx -y wrangler@4 d1 execute chass-telemetry --remote --file=./migrations/NNNN_*.sql` (0001 and 0002 were applied this way, not with `d1 migrations apply`).
+
+### Leaderboard
+
+Separate from telemetry consent: nothing is sent unless the player wins Level 1 and presses **Submit** on the result card, and submitting *is* the consent. It publishes the **nickname** they type (3–16 letters, digits, spaces, `_` or `-`; trimmed, a short profanity blocklist, no HTML) and **that game's moves**. The random player id goes along so a player keeps one line per board, but it is never shown or returned.
+
+- **Ranking:** one board per (level, balance version, AI difficulty). Fewer player moves wins; more gold left breaks a tie; then whoever set the score first. Each player keeps only their best line per board (a worse game keeps the best score and just updates the nickname).
+- **Server-side replay:** the client never reports a score. It sends the level's official start (FEN and both purses), the house rules and the full move/drop list (`e2e4`, `N@b1`). The Worker (`server/telemetry/src/leaderboard.js`) replays it with the game's own rules code (`src/core/scores.js` → `Match` + vendored chess.js, imported by relative path and bundled by wrangler) and rejects it unless the level and balance version are current, the start is exactly `levelStart()`'s, every move and drop is legal, it has at most 400 plies, and it ends in the player's checkmate. Plies, gold left and gold spent come from that replay. Bodies over 64 KB are refused.
+- **Standard rules only:** the *capture bounty* house rule changes how much gold you end with, so games played with it off are not ranked (the result card says so instead of offering the form).
+- **Endpoints** (same Worker and D1 database as telemetry, table `scores` from `migrations/0002_leaderboard.sql`): `POST /v1/scores` → `{rank, total, improved, best}`; `GET /v1/scores?level=L1&balance=b5&ai=normal&limit=20&player=<id>` → the top N (`rank, nickname, moves, goldLeft, createdAt`, no player ids) plus your own line and rank; public, CORS `*`. No IP, User-Agent or geo is stored.
+- **Moderation:** `GET /v1/scores?...` with the `READ_TOKEN` bearer adds each row's `id`; `DELETE /v1/scores/<id>` with the same bearer removes it:
+  ```bash
+  U=https://chass-telemetry.lishuyustevenli.workers.dev
+  curl -H "Authorization: Bearer $(cat .telemetry-read-token)" "$U/v1/scores?ai=normal&limit=100"
+  curl -X DELETE -H "Authorization: Bearer $(cat .telemetry-read-token)" "$U/v1/scores/sc_0123456789abcdef"
+  ```
+- **Limits:** the server proves a game is legal and won, not *who* played it. It cannot tell engine-assisted play from a human, and since the opponent's moves are part of the submission it cannot prove Black's moves came from the game's AI (a hand-made game where Black blunders would replay fine). Replaying costs about 8 ms per 50 plies, so very long games are the most expensive requests. There is no rate limit yet; moderation is the backstop.
 
 **Everything tunable lives in [`src/config.js`](src/config.js):** prices, caps, bounties, drop zones, king start squares, AI presets (search depth, quiescence, randomness window, time cap, how much the AI values unspent gold), the level (player gold, enemy garrison and enemy gold, AI preset) and free-battle purses. Bump `BALANCE_VERSION` when you change any of them.
 
@@ -107,15 +124,17 @@ src/core/               rules: army (prices/caps/labels), placement (zones, FEN,
 src/ai/                 search.js (alpha-beta + quiescence), evaluate.js, worker.js (Web Worker),
                         client.js, fastchess.js (the only file touching chess.js internals)
 src/telemetry/          store (localStorage + export/import, opt-in remote send), session recorder, stats
+src/core/scores.js      leaderboard rules shared with the server: replay a submitted game, score it, nicknames, ranking order
+src/leaderboard.js      leaderboard client: build a submission from a Match, POST it, fetch a board, remember the nickname
 src/settings.js         player settings + house rules + telemetry consent (persisted per browser)
 src/ui/                 board component, sounds, consent card, game feel (feel.js: pure shapes/timings;
-                        fx.js: ink, coins, stamps, shake), screens (menu, battle, free, demo, settings, dashboard, howto)
+                        fx.js: ink, coins, stamps, shake), screens (menu, battle, free, demo, leaderboard, settings, dashboard, howto)
 styles/                 tokens.css (design tokens) + main.css
 vendor/chess.js         chess.js 1.4.0 (BSD-2), vendored
 assets/pieces/          Cburnett SVG pieces (BSD-3)
 tools/                  serve.mjs (dev server), build.mjs (dist/ for itch), simulate.mjs (balance sim), pull-telemetry.mjs
-server/telemetry/       Cloudflare Worker + D1 telemetry collector (own package.json/wrangler.toml — not part of the game build)
-tests/, e2e/            node:test unit tests (incl. the telemetry worker); Chrome smoke test via playwright-core
+server/telemetry/       Cloudflare Worker + D1: telemetry collector and the leaderboard (own package.json/wrangler.toml — not part of the game build)
+tests/, e2e/            node:test unit tests (incl. the telemetry and leaderboard worker); Chrome smoke test via playwright-core
 ```
 
 ## Development

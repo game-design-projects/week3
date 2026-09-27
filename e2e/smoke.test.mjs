@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 import { createStaticServer } from '../tools/serve.mjs';
+import { LEVELS } from '../src/config.js';
+import { officialStart, replaySubmission } from '../src/core/scores.js';
+import { WIN_7 } from '../tests/fixtures/l1-games.js';
 
 const ART = new URL('./artifacts/', import.meta.url).pathname;
 let server;
@@ -472,6 +475,196 @@ test('game feel: a card released just below the board snaps to the nearest legal
   assert.equal(await page.$$eval('.sq.drop-hover', (els) => els.map((e) => e.dataset.square).join()), 'b1', 'preview shows where it will land');
   await page.mouse.up();
   assert.equal(await page.evaluate(() => window.__cbs.match.chess.get('b1')?.type), 'n');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+// ---------------------------------------------------------------- leaderboard
+// Every leaderboard request is intercepted: these tests never reach the real collector.
+const isScores = (url) => new URL(url).pathname.startsWith('/v1/scores');
+
+/** Replace the AI with a script: it plays `replies` (UCI or 'N@b1') in order, one per turn. */
+async function scriptAI(page, replies) {
+  await page.evaluate((list) => {
+    let i = 0;
+    window.__cbs.ctx.ai.chooseMove = async () => {
+      const mv = list[i++];
+      if (!mv) throw new Error('scripted AI ran out of moves');
+      const base = { score: 0, depth: 1, nodes: 1, candidates: 1, mate: 0, uci: mv };
+      const drop = /^([QRBNP])@(..)$/.exec(mv);
+      return drop ? { ...base, drop: { type: drop[1].toLowerCase(), square: drop[2], cost: 0 } } : { ...base, from: mv.slice(0, 2), to: mv.slice(2, 4), promotion: mv[4] };
+    };
+  }, replies);
+}
+
+/** Play White's side of a UCI/drop line by clicking, waiting for the scripted reply after each. */
+async function playWhite(page, line) {
+  for (let i = 0; i < line.length; i += 2) {
+    const drop = /^([QRBNP])@(..)$/.exec(line[i]);
+    if (drop) await buyAt(page, drop[1].toLowerCase(), drop[2]);
+    else await moveBy(page, line[i].slice(0, 2), line[i].slice(2, 4));
+    await waitPlies(page, Math.min(i + 2, line.length));
+  }
+}
+
+const board = (entries, player = null, total = entries.length) => ({ level: 'L1', balance: 'b5', ai: 'normal', total, entries, player });
+const entry = (rank, nickname, moves, goldLeft) => ({ rank, nickname, moves, plies: moves * 2 - 1, goldLeft, goldSpent: 14, createdAt: `2026-09-${String(10 + rank).padStart(2, '0')}T12:00:00.000Z` });
+
+test('leaderboard screen: mocked results table, own row highlighted, tabs, empty and error states, fits 1280x720 and 390px', async () => {
+  const { context, page, errors } = await open();
+  const seen = [];
+  let failNext = false;
+  await page.route(isScores, async (route) => {
+    const url = new URL(route.request().url());
+    seen.push(url.search);
+    if (failNext) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"down"}' });
+    const ai = url.searchParams.get('ai');
+    if (ai === 'hard') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(board([], null, 0)) });
+    const rows = [entry(1, 'Kasparov fan', 4, 3), entry(2, 'Ada', 4, 1), entry(3, '棋手小王', 5, 7), entry(4, 'queen_me', 6, 0)];
+    const me = url.searchParams.get('player') ? { ...entry(12, 'Me Myself', 9, 2) } : null;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(board(rows, me, 31)) });
+  });
+  await page.click(tid('menu-leaderboard'));
+  await page.waitForSelector(tid('lb-row'));
+  const playerId = await page.evaluate(() => window.__cbs.ctx.store.playerId);
+  assert.match(seen[0], new RegExp(`level=L1&balance=b5&ai=normal&limit=20&player=${playerId}`));
+  assert.equal(await page.$$eval(tid('lb-row'), (els) => els.length), 4);
+  assert.match(await page.textContent(tid('lb-row-you')), /12\s*Me Myself\s*you\s*9\s*2 g/);
+  assert.match(await page.textContent(tid('lb-you')), /#12\s*of 31/);
+  assert.equal(await page.getAttribute(tid('lb-tab-normal'), 'aria-selected'), 'true');
+  assert.deepEqual(await noPageScroll(page), { v: true, h: true }, 'leaderboard fits 1280x720');
+  await page.screenshot({ path: `${ART}leaderboard-1280.png` });
+
+  await page.click(tid('lb-tab-hard'));
+  await page.waitForSelector(tid('lb-empty'));
+  assert.match(seen.at(-1), /ai=hard/);
+  await page.screenshot({ path: `${ART}leaderboard-empty-1280.png` });
+
+  failNext = true;
+  await page.click(tid('lb-tab-easy'));
+  await page.waitForSelector(tid('lb-retry'));
+  failNext = false;
+  await page.click(tid('lb-retry'));
+  await page.waitForSelector(tid('lb-row'));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.click(tid('lb-tab-normal'));
+  await page.waitForSelector(tid('lb-row-you'));
+  assert.equal((await noPageScroll(page)).h, true, 'no horizontal scroll at 390px');
+  await page.screenshot({ path: `${ART}leaderboard-390.png`, fullPage: true });
+  assert.deepEqual(errors.filter((e) => !/503/.test(e)), []);
+  await context.close();
+});
+
+test('level 1 win: the result card offers the leaderboard; nothing is sent until Submit; it POSTs the original start + full move list; offline → retry', async () => {
+  const { context, page, errors } = await open();
+  const posts = [];
+  let offline = true;
+  await page.route(isScores, async (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 500, body: 'unexpected' });
+    if (offline) return route.abort('internetdisconnected');
+    posts.push(JSON.parse(route.request().postData()));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ rank: 2, total: 9, improved: true, best: entry(2, 'e2e bot', 4, 3), submitted: { moves: 4, plies: 7, goldLeft: 3, goldSpent: 14 } }),
+    });
+  });
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-q'));
+  await scriptAI(page, WIN_7.filter((_, i) => i % 2 === 1));
+  await playWhite(page, WIN_7);
+  await page.waitForSelector(tid('result-modal'), { timeout: 6000 });
+  assert.deepEqual(await page.evaluate(() => [window.__cbs.match.status().reason, window.__cbs.match.status().winner]), ['checkmate', 'w']);
+  await page.waitForSelector(tid('lb-section'));
+  assert.equal(await page.textContent(tid('lb-score')), '4 moves · 3 g left');
+  await page.waitForTimeout(300);
+  assert.deepEqual(await noPageScroll(page), { v: true, h: true }, 'result card with the leaderboard fits 1280x720');
+  await page.screenshot({ path: `${ART}result-leaderboard-1280.png` });
+
+  // a bad name is caught before anything is sent
+  await page.fill(tid('lb-nickname'), 'ab');
+  await page.click(tid('lb-submit'));
+  assert.match(await page.textContent(tid('lb-error')), /3 to 16/);
+
+  // offline: a toast, and the button offers a retry
+  await page.fill(tid('lb-nickname'), '  e2e   bot ');
+  await page.click(tid('lb-submit'));
+  await page.waitForFunction(() => document.querySelector('[data-testid="lb-submit"]')?.textContent === 'Retry');
+  assert.match(await page.textContent('#toast'), /Could not reach the leaderboard/);
+  assert.equal(posts.length, 0);
+
+  offline = false;
+  await page.click(tid('lb-submit'));
+  await page.waitForSelector(tid('lb-result'));
+  assert.match(await page.textContent(tid('lb-result')), /You're #2 of 9/);
+  await page.screenshot({ path: `${ART}result-leaderboard-done-1280.png` });
+
+  assert.equal(posts.length, 1);
+  const body = posts[0];
+  const official = officialStart(LEVELS[0]);
+  assert.equal(body.nickname, 'e2e bot', 'trimmed and collapsed');
+  assert.equal(body.startFen, official.startFen, 'the ORIGINAL level start, not the rebased FEN after a drop');
+  assert.deepEqual(body.reserve, official.reserve);
+  assert.deepEqual(body.moves, WIN_7);
+  assert.deepEqual(body.rules, { captureBounty: true });
+  assert.deepEqual([body.levelId, body.balanceVersion, body.aiPreset], ['L1', 'b5', 'normal']);
+  assert.equal(body.playerId, await page.evaluate(() => window.__cbs.ctx.store.playerId));
+  const replay = replaySubmission(body);
+  assert.equal(replay.ok, true, 'the server-side replay accepts exactly what the client sent');
+  assert.deepEqual([replay.moves, replay.goldLeft], [4, 3]);
+  assert.equal(await page.evaluate(() => localStorage.getItem('cbs.nickname.v1')), 'e2e bot', 'nickname remembered');
+
+  // the next win's card starts with the remembered name
+  await page.click(tid('result-rematch'));
+  await page.waitForSelector(tid('reinforce-q'));
+  await scriptAI(page, WIN_7.filter((_, i) => i % 2 === 1));
+  await playWhite(page, WIN_7);
+  await page.waitForSelector(tid('lb-section'), { timeout: 6000 });
+  assert.equal(await page.inputValue(tid('lb-nickname')), 'e2e bot');
+  assert.equal(posts.length, 1, 'still nothing sent without a click');
+  assert.deepEqual(errors.filter((e) => !/ERR_INTERNET_DISCONNECTED|Failed to load resource/.test(e)), []);
+  await context.close();
+});
+
+test('no leaderboard form after a Level 1 loss or a free-battle win; only a note when the house rules differ', async () => {
+  const { context, page, errors } = await open();
+  let called = false;
+  await page.route(isScores, async (route) => {
+    called = true;
+    await route.fulfill({ status: 500, body: '' });
+  });
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-r'));
+  await page.click(tid('resign'));
+  await page.click(tid('resign-confirm'));
+  await page.waitForSelector(tid('result-modal'));
+  assert.equal(await page.$(tid('lb-section')), null, 'no form after a loss');
+  await page.click(tid('result-menu'));
+
+  // free battle vs the (scripted) AI, 8 gold each: W R@a1, P@h2, P@g2, P@f2 … Ra8# (the hotseat mate from the game-feel test)
+  await page.click(tid('menu-free'));
+  await page.click(tid('free-gold-8'));
+  await page.click(tid('free-start'));
+  await page.waitForSelector(tid('reinforce-r'));
+  await scriptAI(page, ['P@d7', 'P@e7', 'P@f7', 'R@h8']);
+  await playWhite(page, ['R@a1', null, 'P@h2', null, 'P@g2', null, 'P@f2', null, 'a1a8']);
+  await page.waitForSelector(tid('result-modal'), { timeout: 6000 });
+  assert.deepEqual(await page.evaluate(() => [window.__cbs.match.status().reason, window.__cbs.match.status().winner]), ['checkmate', 'w']);
+  assert.equal(await page.$(tid('lb-section')), null, 'no form for a free-battle win');
+  await page.click(tid('result-menu'));
+
+  // a Level 1 win with the capture bounty off is not ranked: a note instead of the form
+  await page.click(tid('menu-settings'));
+  await page.click(tid('setting-captureBounty'));
+  await page.click(tid('nav-menu'));
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-q'));
+  await scriptAI(page, WIN_7.filter((_, i) => i % 2 === 1));
+  await playWhite(page, WIN_7);
+  await page.waitForSelector(tid('lb-house-rules'), { timeout: 6000 });
+  assert.equal(await page.$(tid('lb-nickname')), null);
+  assert.equal(called, false);
   assert.deepEqual(errors, []);
   await context.close();
 });

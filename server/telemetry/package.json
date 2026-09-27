@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Cloudflare Worker + D1 collector for Chess Battle Simulator's anonymous playtest telemetry.",
+  "description": "Cloudflare Worker + D1 collector for Chess Battle Simulator's anonymous playtest telemetry and its server-validated leaderboard.",
   "scripts": {
     "dev": "wrangler dev",
     "db:create": "wrangler d1 create chass-telemetry",
     "db:migrate": "wrangler d1 execute chass-telemetry --remote --file=./migrations/0001_init.sql",
+    "db:migrate:0002": "wrangler d1 execute chass-telemetry --remote --file=./migrations/0002_leaderboard.sql",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
   },

@@ -4,7 +4,7 @@
 // lives here. After changing prices, caps, levels or AI presets, bump
 // BALANCE_VERSION so telemetry from different balance passes can be told apart.
 
-export const APP_VERSION = '0.5.0'; // keep in sync with package.json + CHANGELOG.md
+export const APP_VERSION = '0.6.0'; // keep in sync with package.json + CHANGELOG.md
 export const BALANCE_VERSION = 'b5'; // b2 mid-battle shop; b3 bounty + AI shops; b4 no recruit phase — start with a king and gold; b5 L1 16 g vs garrison + 5 g
 
 // Buyable piece types, in display order. The king is free and mandatory.
@@ -145,4 +145,15 @@ export const TELEMETRY = {
   // === 'granted') — see src/telemetry/store.js `canSend`. null = local only
   // (localStorage + export/import).
   endpoint: 'https://chass-telemetry.lishuyustevenli.workers.dev/v1/sessions',
+};
+
+// Public leaderboard (Level 1 wins only), served by the same Worker as
+// telemetry (server/telemetry/src/leaderboard.js). Separate from telemetry
+// consent: a score is sent only when the player presses Submit on the result
+// dialog, and that publishes their nickname and the game's moves.
+export const LEADERBOARD = {
+  endpoint: 'https://chass-telemetry.lishuyustevenli.workers.dev/v1/scores',
+  nicknameKey: 'cbs.nickname.v1',
+  limit: 20,
+  timeoutMs: 10000,
 };

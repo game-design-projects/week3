@@ -18,9 +18,10 @@ import * as dashboard from './ui/screens/dashboard.js';
 import * as howto from './ui/screens/howto.js';
 import * as demo from './ui/screens/demo.js';
 import * as settingsScreen from './ui/screens/settings.js';
+import * as leaderboard from './ui/screens/leaderboard.js';
 
 const log = createLogger('app');
-const SCREENS = { menu, battle, free, dashboard, howto, demo, settings: settingsScreen };
+const SCREENS = { menu, battle, free, dashboard, howto, demo, leaderboard, settings: settingsScreen };
 
 const root = document.getElementById('screen');
 const toastEl = document.getElementById('toast');

@@ -14,11 +14,14 @@
 //   POST /v1/sessions            body = one session (text/plain or application/json) → 204
 //   GET  /v1/sessions?since=&limit=   Bearer READ_TOKEN required → {schema, exportedAt, sessions}
 //   GET  /health                 → 200 "ok"
+//   POST/GET /v1/scores, DELETE /v1/scores/:id → the leaderboard (./leaderboard.js)
 //   OPTIONS *                    → CORS preflight
 //
 // Kept importable from plain Node (no `cloudflare:*` imports) so it can be
 // unit-tested under `node --test` with a fake `env.DB` — see
 // tests/telemetry-worker.test.js.
+
+import { handleDeleteScore, handleListScores, handleSubmitScore, scoresCors } from './leaderboard.js';
 
 const MAX_BODY_BYTES = 128 * 1024; // 128 KB
 const MODES = ['level', 'free'];
@@ -150,6 +153,16 @@ async function handleExport(request, env, url) {
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
+  const path = url.pathname;
+
+  // Leaderboard: public CORS (*); DELETE is only honoured with the bearer token.
+  if (path === '/v1/scores' || path.startsWith('/v1/scores/')) {
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: scoresCors(path) });
+    if (path === '/v1/scores' && request.method === 'POST') return handleSubmitScore(request, env);
+    if (path === '/v1/scores' && request.method === 'GET') return handleListScores(request, env, url, { authorized: isAuthorized(request, env) });
+    if (path !== '/v1/scores' && request.method === 'DELETE') return handleDeleteScore(request, env, path, { authorized: isAuthorized(request, env) });
+    return new Response(JSON.stringify({ error: 'method not allowed' }), { status: 405, headers: { 'content-type': 'application/json', ...scoresCors(path) } });
+  }
 
   if (request.method === 'OPTIONS') return empty(204, request);
   if (request.method === 'GET' && url.pathname === '/health') return new Response('ok', { status: 200, headers: corsHeaders(request) });
