@@ -4,7 +4,7 @@
 //   free mode : armies come from the draft; deploy only. vs AI the AI deploys
 //               first; hotseat: White deploys, hand-off, Black deploys.
 
-import { BATTLE_PURCHASES, CAPS, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
+import { AI_PRESETS, CAPS, CAPTURE_BOUNTY, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
 import { armyCost, armyFromPlacement, armyLabel, canBuy, emptyArmy } from '../../core/army.js';
 import { addPieceAuto, autoPlace } from '../../core/autoplace.js';
 import { isAllowedSquare, movePiece, pieceAt, removeAt, validateMatch } from '../../core/placement.js';
@@ -20,6 +20,8 @@ export function mount(root, ctx, params) {
   const rng = createRng(randomSeed());
   const budget = level ? level.budget : params.budget;
   const hotseat = params.opponent === 'hotseat';
+  const rules = ctx.settings.rules(); // house rules in force for this game
+  const aiPreset = level ? ctx.settings.get().campaignAI : params.aiPreset;
 
   // `side` = whose army is being deployed right now; `placements` = both sides.
   let side = 'w';
@@ -29,7 +31,7 @@ export function mount(root, ctx, params) {
   let launched = false; // true once we hand over to the battle screen
 
   if (level) {
-    ctx.recorder.begin({ mode: 'level', levelId: level.id, opponent: 'ai', aiPreset: level.aiPreset, budget, playerSide: 'w' });
+    ctx.recorder.begin({ mode: 'level', levelId: level.id, opponent: 'ai', aiPreset, budget, playerSide: 'w', rules });
     placements.b = level.enemy.map((p) => ({ ...p }));
   } else if (!hotseat) {
     placements.b = autoPlace('b', params.armies.b, { rng });
@@ -42,9 +44,9 @@ export function mount(root, ctx, params) {
   const opponentOf = (s) => placements[s === 'w' ? 'b' : 'w'];
 
   // ---------------------------------------------------------------- layout
-  const shop = h('aside', { class: 'panel shop' });
+  const shop = h('aside', { class: 'side-col shop' });
   const boardWrap = h('div', { class: 'board-wrap' });
-  const intel = h('aside', { class: 'panel intel' });
+  const intel = h('aside', { class: 'side-col intel' });
   const handoffEl = h('div', { class: 'handoff', hidden: true });
   root.append(h('section', { class: 'stage setup' }, shop, h('div', { class: 'center' }, boardWrap, handoffEl), intel));
 
@@ -143,7 +145,8 @@ export function mount(root, ctx, params) {
       mode: params.mode,
       levelId: level?.id ?? null,
       opponent: level ? 'ai' : params.opponent,
-      aiPreset: level ? level.aiPreset : params.aiPreset,
+      aiPreset,
+      rules,
       playerSide: hotseat ? null : 'w',
       budget,
       white: sideParams('w'),
@@ -189,10 +192,10 @@ export function mount(root, ctx, params) {
     fill(handoffEl, 
       h(
         'div',
-        { class: 'handoff-card' },
-        h('p', { class: 'eyebrow' }, 'White is deployed'),
+        { class: 'dialog small' },
+        h('p', { class: 'kicker' }, 'White is deployed'),
         h('h2', {}, 'Pass the device to Black'),
-        h('p', {}, 'Black deploys next and can see White’s setup — White still moves first.'),
+        h('p', {}, 'Black deploys next and can see White’s setup. White still moves first.'),
         h('button', { class: 'btn primary', type: 'button', dataset: { testid: 'handoff-continue' }, onclick: continueHandoff }, 'I am Black — deploy'),
       ),
     );
@@ -208,47 +211,50 @@ export function mount(root, ctx, params) {
     const header = h(
       'div',
       { class: 'purse' },
-      h('span', { class: 'purse-label' }, level ? 'War chest' : `${side === 'w' ? 'White' : 'Black'} army`),
-      h('span', { class: `purse-value${justBought ? ' pop' : ''}` }, h('i', { class: 'coin' }), h('b', { class: 'num' }, left), h('small', {}, ` / ${budget} gold`)),
-      h('div', { class: 'meter' }, h('div', { class: 'meter-fill', style: { width: `${budget ? (spent / budget) * 100 : 0}%` } })),
+      h('div', { class: 'section-head' }, h('span', {}, level ? 'Recruit' : `${side === 'w' ? 'White' : 'Black'} army`), h('span', { class: `num gold${justBought ? ' pop' : ''}` }, `${left} of ${budget} g left`)),
+      h('div', { class: 'meter', role: 'presentation' }, h('div', { class: 'meter-fill', style: { width: `${budget ? (spent / budget) * 100 : 0}%` } })),
     );
     if (!level) {
-      fill(shop, 
+      fill(
+        shop,
         header,
-        h('p', { class: 'hint' }, 'Your army was drafted. Drag pieces to arrange them, or let the quartermaster do it.'),
-        h('div', { class: 'owned' }, PIECE_TYPES.filter((t) => army()[t]).map((t) => h('span', { class: 'owned-chip' }, pieceImg(side, t), `×${army()[t]}`))),
-        h('div', { class: 'shop-actions' }, h('button', { class: 'btn', type: 'button', dataset: { testid: 'auto-arrange' }, onclick: autoArrange }, 'Auto-arrange')),
+        h('p', { class: 'fine' }, 'Your army was drafted. Drag pieces to arrange them, or use Auto-arrange.'),
+        h('ul', { class: 'owned' }, PIECE_TYPES.filter((t) => army()[t]).map((t) => h('li', {}, pieceImg(side, t), h('span', { class: 'num' }, `× ${army()[t]}`)))),
+        h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', dataset: { testid: 'auto-arrange' }, onclick: autoArrange }, 'Auto-arrange')),
       );
       return;
     }
-    const cards = PIECE_TYPES.map((t) => {
+    const rows = PIECE_TYPES.map((t) => {
       const check = canBuy(army(), t, budget);
       const owned = army()[t];
       return h(
-        'div',
-        { class: `shop-card${check.ok ? '' : ' disabled'}${justBought === t ? ' bought' : ''}` },
-        pieceImg(side, t, 'shop-piece'),
-        h('div', { class: 'shop-info' }, h('b', {}, PIECE_NAMES[t]), h('span', { class: 'shop-meta' }, h('i', { class: 'coin sm' }), h('span', { class: 'num' }, PRICES[t]), h('span', { class: 'owned-count' }, `${owned}/${CAPS[t]}`))),
+        'tr',
+        { class: `${check.ok ? '' : 'off'}${justBought === t ? ' bought' : ''}` },
+        h('td', { class: 'pc' }, pieceImg(side, t, 'shop-piece')),
+        h('td', {}, PIECE_NAMES[t]),
+        h('td', { class: 'num price' }, `${PRICES[t]} g`),
+        h('td', { class: 'num owned-n' }, `${owned}/${CAPS[t]}`),
         h(
-          'div',
-          { class: 'shop-btns' },
-          h('button', { class: 'round-btn', type: 'button', disabled: !owned, 'aria-label': `Dismiss a ${PIECE_NAMES[t]}`, dataset: { testid: `sell-${t}` }, onclick: () => sellPiece(t) }, '−'),
+          'td',
+          { class: 'buy-btns' },
+          h('button', { class: 'step', type: 'button', disabled: !owned, 'aria-label': `Dismiss a ${PIECE_NAMES[t]}`, dataset: { testid: `sell-${t}` }, onclick: () => sellPiece(t) }, '−'),
           h(
             'button',
-            { class: 'round-btn plus', type: 'button', disabled: !check.ok, title: check.ok ? `Recruit a ${PIECE_NAMES[t]}` : REASON[check.reason], 'aria-label': `Recruit a ${PIECE_NAMES[t]} for ${PRICES[t]} gold`, dataset: { testid: `buy-${t}` }, onclick: () => buyPiece(t) },
+            { class: 'step add', type: 'button', disabled: !check.ok, title: check.ok ? `Recruit a ${PIECE_NAMES[t]}` : REASON[check.reason], 'aria-label': `Recruit a ${PIECE_NAMES[t]} for ${PRICES[t]} gold`, dataset: { testid: `buy-${t}` }, onclick: () => buyPiece(t) },
             '+',
           ),
         ),
       );
     });
-    fill(shop, 
+    fill(
+      shop,
       header,
-      h('div', { class: 'shop-list' }, cards),
+      h('table', { class: 'price-list' }, h('tbody', {}, rows)),
       h(
         'div',
-        { class: 'shop-actions' },
+        { class: 'actions' },
         h('button', { class: 'btn', type: 'button', dataset: { testid: 'auto-arrange' }, onclick: autoArrange }, 'Auto-arrange'),
-        h('button', { class: 'btn ghost', type: 'button', dataset: { testid: 'clear-army' }, onclick: clearArmy }, 'Clear'),
+        h('button', { class: 'btn quiet', type: 'button', dataset: { testid: 'clear-army' }, onclick: clearArmy }, 'Clear'),
       ),
     );
   }
@@ -269,47 +275,44 @@ export function mount(root, ctx, params) {
           .slice(-5)
           .reverse()
       : [];
-    fill(intel, 
-      h('p', { class: 'eyebrow' }, level ? `Level 1 · ${level.name}` : hotseat ? `Hotseat · ${side === 'w' ? 'White' : 'Black'} deploys` : 'Free mode · vs AI'),
+    const unspent = budget - mine;
+    const bounty = rules.captureBounty ? ` Captures earn ${Object.entries(CAPTURE_BOUNTY).map(([t, g]) => `${g} for a ${PIECE_NAMES[t].toLowerCase()}`).join(', ')}.` : '';
+    fill(
+      intel,
+      h('div', { class: 'section-head' }, h('span', {}, level ? `Level 1: ${level.name}` : hotseat ? `Hotseat: ${side === 'w' ? 'White' : 'Black'} deploys` : `Free mode vs ${AI_PRESETS[aiPreset]?.label ?? 'AI'}`)),
       level ? h('p', { class: 'brief' }, level.blurb) : null,
       h(
-        'div',
+        'table',
         { class: 'versus' },
-        h('div', { class: 'vs-row ally' }, h('span', {}, hotseat ? (side === 'w' ? 'White' : 'Black') : 'You'), h('b', {}, armyLabel(myArmy)), h('span', { class: 'num' }, mine)),
-        h('div', { class: 'vs-bar' }, h('div', { class: 'vs-ally', style: { width: `${(mine / total) * 100}%` } }), h('div', { class: 'vs-enemy', style: { width: `${(theirs / total) * 100}%` } })),
-        h('div', { class: 'vs-row enemy' }, h('span', {}, hotseat ? (side === 'w' ? 'Black' : 'White') : 'Enemy'), h('b', {}, armyLabel(enemyArmy)), h('span', { class: 'num' }, theirs)),
+        h('tr', { class: 'ally' }, h('th', {}, hotseat ? (side === 'w' ? 'White' : 'Black') : 'You'), h('td', {}, armyLabel(myArmy)), h('td', { class: 'num' }, mine)),
+        h('tr', { class: 'enemy' }, h('th', {}, hotseat ? (side === 'w' ? 'Black' : 'White') : 'Enemy'), h('td', {}, armyLabel(enemyArmy)), h('td', { class: 'num' }, theirs)),
       ),
+      h('div', { class: 'vs-bar', role: 'presentation' }, h('div', { class: 'vs-ally', style: { width: `${(mine / total) * 100}%` } }), h('div', { class: 'vs-enemy', style: { width: `${(theirs / total) * 100}%` } })),
       h(
-        'ul',
+        'ol',
         { class: 'rules' },
-        h('li', {}, 'Deploy in your back two ranks'),
-        h('li', {}, 'Pawns on the second rank only'),
-        h('li', {}, 'No king may start in check'),
-        BATTLE_PURCHASES ? h('li', {}, 'Unspent gold is your war chest: mid-battle you can spend a turn to drop a new piece into your zone') : null,
+        h('li', {}, 'Deploy in your back two ranks.'),
+        h('li', {}, 'Pawns start on the second rank.'),
+        h('li', {}, 'Neither king may start in check.'),
+        rules.battleShop ? h('li', {}, `Gold you don't spend can buy pieces during the battle.${bounty}`) : null,
       ),
       blocking.length
         ? h('div', { class: 'problems', role: 'alert' }, blocking.map((e) => h('p', {}, e.message)))
-        : h(
-            'p',
-            { class: 'ready-note' },
-            mine < budget && BATTLE_PURCHASES
-              ? `Ready — ${budget - mine} gold goes into your war chest for reinforcements.`
-              : mine < budget
-                ? `${budget - mine} gold unspent.`
-                : 'Ready for battle.',
-          ),
+        : h('p', { class: 'ready-note' }, unspent > 0 ? (rules.battleShop ? `${unspent} g carried into battle for the shop.` : `${unspent} g unspent.`) : 'Ready.'),
       h(
         'button',
-        { class: 'btn primary big', type: 'button', disabled: !ready, dataset: { testid: 'start-battle' }, onclick: start },
-        hotseat && side === 'w' ? 'Lock in White' : 'Start battle ⚔',
+        { class: 'btn primary wide', type: 'button', disabled: !ready, dataset: { testid: 'start-battle' }, onclick: start },
+        hotseat && side === 'w' ? 'Lock in White' : 'Start the battle',
       ),
       past.length
         ? h(
             'div',
             { class: 'past' },
-            h('p', { class: 'eyebrow' }, 'Past attempts'),
-            past.map((s) =>
-              h('div', { class: `past-row ${s.result}` }, h('span', { class: 'past-label' }, s.white.label), h('span', { class: 'past-result' }, s.result === 'abandoned' ? 'left' : s.result), h('span', { class: 'num dim' }, s.plies ? `${s.plies} plies` : '')),
+            h('div', { class: 'section-head sub' }, h('span', {}, 'Your last attempts')),
+            h(
+              'table',
+              {},
+              past.map((s) => h('tr', { class: s.result }, h('td', {}, s.white.label), h('td', { class: 'res' }, s.result === 'abandoned' ? 'left' : s.result), h('td', { class: 'num fine' }, s.plies ? `${s.plies} plies` : ''))),
             ),
           )
         : null,

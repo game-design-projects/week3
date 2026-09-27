@@ -118,3 +118,25 @@ test('client: inline fallback in Node (no Worker global)', async () => {
   assert.equal(r.uci, 'a1a8');
   ai.dispose();
 });
+
+test('shop: the AI drops a blocker when that is the only way out of check', () => {
+  const fen = '4k3/8/8/8/8/8/3PPP2/r3KB2 w - - 0 1'; // Ra1+; only b1/c1/d1 drops block
+  for (const preset of Object.values(AI_PRESETS)) {
+    const r = chooseMove({ startFen: fen, preset, seed: 3, shop: { reserve: 3 } });
+    assert.ok(r.drop, `${preset.label} should drop, got ${r.uci}`);
+    assert.ok(['b1', 'c1', 'd1'].includes(r.drop.square));
+  }
+  assert.throws(() => chooseMove({ startFen: fen, preset: AI_PRESETS.easy }), /finished/);
+});
+
+test('shop: with gold and a quiet position the AI still plays sensibly and returns a legal action', () => {
+  const fen = '3r2k1/4bppp/8/8/8/8/4P3/R3K3 b - - 0 1';
+  const r = chooseMove({ startFen: fen, preset: AI_PRESETS.normal, seed: 2, shop: { reserve: 5 } });
+  if (r.drop) {
+    assert.ok(['r', 'b', 'n', 'p', 'q'].includes(r.drop.type));
+    assert.ok(['7', '8'].includes(r.drop.square[1]));
+  } else {
+    assert.ok(r.from && r.to);
+  }
+  assert.ok(r.ms < AI_PRESETS.normal.maxMs + 800, `${r.ms}ms`);
+});

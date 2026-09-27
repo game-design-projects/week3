@@ -5,6 +5,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-26
+
+### Added
+- **Capture bounty:** capturing an enemy piece earns gold (P/N/B 1, R 2, Q 4 — `CAPTURE_BOUNTY` in `src/config.js`), so the battle shop is usable all game, not only with unspent recruit gold.
+- **The AI shops too:** its search also scores buying and dropping a piece (e.g. blocking a mate), charging `AI_GOLD_VALUE_CP` per gold so it only spends when it helps.
+- **Demo mode (AI vs AI):** identical mirrored armies, different search depths, auto-continuing series with a running score, per-move commentary (depth, positions, purchases, mates seen) and an evaluation bar. Demo games are not recorded.
+- **Settings screen:** sound, legal-move dots, coordinates, animations, campaign AI strength, and house rules *buy during the battle* / *capture bounty*; persisted per browser. Sessions record the rules in force (`rules`), and CSV has `battleShop` / `captureBounty` columns.
+- E2E tests for settings persistence and demo mode; unit tests for bounty, shop toggle, AI drops and settings.
+
+### Changed
+- New visual design: a printed-chess-book style (paper, ink, hairline rules, IBM Plex Serif/Sans/Mono, contents-page menu, square-cornered controls, offset print shadow on dialogs). It replaces the dark gradient/glow theme.
+- The battle shop is always visible (when the house rule is on) and shows your gold; bounty gold is announced when you capture.
+- Balance version `b3`.
+
+### Fixed
+- Result dialog buttons overlapped because a layout class collided with the dashboard's stacked-bar class.
+
 ## [0.2.0] - 2026-09-26
 
 ### Added

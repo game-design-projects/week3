@@ -84,3 +84,21 @@ test('AI keeps working after a drop (search uses the post-drop segment)', () => 
   m.move({ from: r.from, to: r.to, promotion: r.promotion });
   assert.equal(m.plies(), 2);
 });
+
+test('capture bounty adds gold to the capturer; shop can be closed; bounty can be off', () => {
+  const fen = '4k3/8/8/3r4/8/8/3R4/4K3 w - - 0 1';
+  const m = new Match({ startFen: fen });
+  const r = m.move('d2d5');
+  assert.equal(r.earned, 2);
+  assert.equal(m.reserve.w, 2);
+  assert.deepEqual(m.earned(), { w: 2, b: 0 });
+  assert.equal(m.turn(), 'b');
+
+  const noBounty = new Match({ startFen: fen, rules: { bounty: null } });
+  assert.equal(noBounty.move('d2d5').earned, 0);
+  assert.equal(noBounty.reserve.w, 0);
+
+  const closed = new Match({ startFen: KEEP, reserve: { w: 9, b: 0 }, rules: { shop: false } });
+  assert.equal(closed.dropProblem('n', 'b1'), 'shop-closed');
+  assert.deepEqual(closed.droppableTypes(), []);
+});

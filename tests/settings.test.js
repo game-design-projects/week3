@@ -1,0 +1,39 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createSettings, sanitize, SETTINGS_KEY } from '../src/settings.js';
+import { DEFAULT_SETTINGS } from '../src/config.js';
+
+function mem() {
+  const m = new Map();
+  return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), m };
+}
+
+test('settings: defaults, persist, reload, reset', () => {
+  const storage = mem();
+  const s = createSettings({ storage });
+  assert.deepEqual(s.get(), DEFAULT_SETTINGS);
+  s.set({ showHints: false, campaignAI: 'hard' });
+  const again = createSettings({ storage });
+  assert.equal(again.get().showHints, false);
+  assert.equal(again.get().campaignAI, 'hard');
+  again.reset();
+  assert.deepEqual(createSettings({ storage }).get(), DEFAULT_SETTINGS);
+});
+
+test('settings: sanitize drops junk, wrong types and unknown presets; survives corrupt storage', () => {
+  assert.deepEqual(sanitize({ sound: 'yes', campaignAI: 'godlike', evil: 1 }), DEFAULT_SETTINGS);
+  const storage = mem();
+  storage.setItem(SETTINGS_KEY, '{not json');
+  assert.deepEqual(createSettings({ storage }).get(), DEFAULT_SETTINGS);
+  const blocked = createSettings({ storage: null });
+  assert.equal(blocked.set({ battleShop: false }).battleShop, false);
+  assert.deepEqual(blocked.rules(), { battleShop: false, captureBounty: true });
+});
+
+test('settings: onChange listeners fire', () => {
+  const s = createSettings({ storage: null });
+  let seen = null;
+  s.onChange((v) => (seen = v.showCoords));
+  s.set({ showCoords: false });
+  assert.equal(seen, false);
+});

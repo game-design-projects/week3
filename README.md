@@ -4,7 +4,7 @@
 
 **Recruit an army with a fixed purse of gold. Deploy it. Then play real chess until one king falls.**
 
-A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives you a budget and shows you the enemy's army; you buy pieces (Queen 9, Rook 5, Bishop 3, Knight 3, Pawn 1, King free), place them in your back two ranks, and then play standard chess against an AI until someone is checkmated. **Gold you don't spend is your war chest.** On any turn, instead of moving, you can buy a piece and drop it into your deployment zone.
+A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives you a budget and shows you the enemy's army; you buy pieces (Queen 9, Rook 5, Bishop 3, Knight 3, Pawn 1, King free), place them in your back two ranks, and then play standard chess against an AI until someone is checkmated. **The shop stays open during the battle.** Gold you didn't spend is kept, capturing enemy pieces earns bounty gold, and on any turn you can buy a piece and drop it into your deployment zone instead of moving. The AI shops too.
 
 - **Play online:** https://stevenli-phoenix-work.itch.io/chass
 - **Play locally:** `pnpm install && pnpm dev`, then open http://localhost:5173 (designed for a 1280×720 desktop window; also works on phones).
@@ -15,9 +15,11 @@ A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives
 |---|---|
 | **Campaign · Level 1 "The Keep"** | 12 gold vs a fixed, visible garrison: K g8, R d8, B e7, P f7 g7 h7 (11 gold). Enemy AI plays at *Captain* strength. Checkmate it to win. |
 | **Free mode · The Draft** | Both sides get the same budget (8 / 12 / 20 / 39) and alternate buying one piece at a time; passing locks your army. Black drafts first (White moves first). Play the AI (Recruit / Captain / Warlord) or a friend on the same device. |
+| **Demo: AI vs AI** | Two AIs get the *same* army in a mirrored position; only their search depth differs (e.g. Warlord, 4 plies, vs Recruit, 1 ply). It plays itself with a running score, commentary for each move (depth, positions searched, purchases, mates seen) and an evaluation bar. It shows the strategy ladder directly: thinking further ahead wins. |
+| **Settings** | Sound, legal-move dots, coordinates, animations, campaign AI strength, and two house rules (*buy during the battle*, *capture bounty*). Rule settings are recorded with every session. |
 | **Playtest data** | Every session is recorded locally: win rate per army, what players buy, how games end, a learning curve, and the full PGN of each game. Export JSON/CSV, import files from other testers. |
 
-**Rules:** normal chess (via chess.js) with no castling, plus **reinforcements**: unspent gold carries into the battle, and on your turn you may spend it to drop a new piece on an empty square of your deployment zone. The drop is your move for that turn, must respect the per-type caps (counted on the board), and can block a check, so being "mated" while you still have a legal blocking drop is not mate. Deploy in ranks 1–2, pawns on rank 2 only (they can still double-step). Neither king may start in check. Max copies per side = one standard set (1 Q, 2 R, 2 B, 2 N, 8 P). Checkmate wins; stalemate, threefold repetition, the 50-move rule and insufficient material are draws.
+**Rules:** normal chess (via chess.js) with no castling, plus **the battle shop**: unspent gold carries into the battle, captures earn a bounty (pawn/knight/bishop 1, rook 2, queen 4), and on your turn you may spend gold to drop a new piece on an empty square of your deployment zone. The drop is your move for that turn, must respect the per-type caps (counted on the board), and can block a check, so being "mated" while you still have a legal blocking drop is not mate. Deploy in ranks 1–2, pawns on rank 2 only (they can still double-step). Neither king may start in check. Max copies per side = one standard set (1 Q, 2 R, 2 B, 2 N, 8 P). Checkmate wins; stalemate, threefold repetition, the 50-move rule and insufficient material are draws.
 
 ## Strategic depth: characteristics used (Lecture 3)
 
@@ -27,7 +29,7 @@ A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives
 | **Observability** | Perfect information. The enemy army is shown *before* you spend, and in the draft every pick is public, so you can plan against what you see. |
 | **Time granularity** | Turn-based with no clock. You can think as long as you like, which is where the depth is. |
 | **Length of playtime** | A *round* is one battle. A *session* is several attempts at the level, adjusting your army after each one (Rematch or Change army). The *full game* would be a campaign of levels; this prototype has one. |
-| **Systems** | *Resources*: gold turns into pieces, now or later. Holding gold trades tempo and board presence for flexibility. *Combination*: pieces work together (two rooks ladder-mate, the bishop pair, a rook behind a passed pawn). *Conditional*: deployment rules ("if it's a pawn, then rank 2"; "if a king starts in check, you can't begin"). *Feedback loops*: a material lead snowballs through trades. The telemetry → rebalance loop sits on the designer's side. |
+| **Systems** | *Resources*: gold turns into pieces, now or later. Holding gold trades tempo and board presence for flexibility. Capture bounties turn material into more gold, which is a positive feedback loop the losing side can blunt with well-timed drops. *Combination*: pieces work together (two rooks ladder-mate, the bishop pair, a rook behind a passed pawn). *Conditional*: deployment rules ("if it's a pawn, then rank 2"; "if a king starts in check, you can't begin"). *Feedback loops*: a material lead snowballs through trades. The telemetry → rebalance loop sits on the designer's side. |
 | **Single vs multiplayer** | *One-and-a-half player* in the campaign (you vs a non-trivial AI). Competitive local multiplayer in the free-mode hotseat draft. |
 | **Dexterity vs strategy** | Zero dexterity, all strategy: thinking ahead, managing resources, and taking risks with your purchases. |
 | **Depth vs entropy** | Chess alone is deep but learned by rote. The buy phase adds a structured decision where point values are a useful compression but not a solution, so there is a *strategy ladder* to climb. |
@@ -42,7 +44,7 @@ These are the rules of thumb we expect players to discover. The telemetry exists
 4. **Don't deploy where the enemy is already aiming.** Keep your king off the d-file (rook d8) and away from the e7 bishop's diagonals. Put two bishops on opposite colours; the game lets you put them on the same colour, and that is a trap.
 5. **Quantity vs quality.** Q+3P has the most concentrated power, but the queen can be chased and traded. Cheaper pieces spread threats and shield the king.
 6. **When ahead, simplify, and don't stalemate the lone king.**
-7. **Gold in reserve is an answer, not an army.** A war chest lets you plug a hole or block a mate after you've seen the AI's plan, but every drop costs a tempo, and pieces left in the chest don't defend anything. Recruit what the opening needs and bank the rest.
+7. **Gold in reserve is an answer, not an army. Trades pay.** Every capture refills your purse, so an even trade still earns gold. A war chest lets you plug a hole or block a mate after you've seen the AI's plan, but every drop costs a tempo, and pieces left in the chest don't defend anything. Recruit what the opening needs and bank the rest.
 8. *(Draft)* **Counter-pick.** Black picks first, so taking the queen early denies it. Once the other side locks, spend every remaining coin.
 
 A good heuristic, per the lecture, applies at every stage, sits between gut feeling and brute force, and compresses the game state. "Can this army mate?" and "aim at their visible weakness" do that for buying, placing and playing alike.
@@ -58,6 +60,10 @@ Balancing is the hard part, so the prototype ships with two tools for it:
 
 **Everything tunable lives in [`src/config.js`](src/config.js):** prices, caps, deployment zones, AI presets (search depth, quiescence, randomness window, time cap), the level (budget, enemy army and placement, AI preset) and free-mode budgets. Bump `BALANCE_VERSION` when you change any of them.
 
+## Look and feel
+
+The interface is designed like a printed chess book: warm paper, black ink, hairline rules, IBM Plex Serif/Sans/Mono, one vermilion for the enemy and a deep ink-blue for you. There are no gradients, glows or rounded cards, and the menu is a contents page. All colours and fonts live in `styles/tokens.css`.
+
 ## Project layout
 
 ```
@@ -68,7 +74,8 @@ src/core/               rules: army (prices/caps), placement (zones, FEN, no-sta
 src/ai/                 search.js (alpha-beta + quiescence), evaluate.js, worker.js (Web Worker),
                         client.js, fastchess.js (the only file touching chess.js internals)
 src/telemetry/          store (localStorage + export/import), session recorder, stats
-src/ui/                 board component, sounds, screens (menu, setup, battle, draft, dashboard, howto)
+src/settings.js         player settings + house rules (persisted per browser)
+src/ui/                 board component, sounds, screens (menu, setup, battle, draft, demo, settings, dashboard, howto)
 styles/                 tokens.css (design tokens) + main.css
 vendor/chess.js         chess.js 1.4.0 (BSD-2), vendored
 assets/pieces/          Cburnett SVG pieces (BSD-3)

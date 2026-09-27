@@ -5,7 +5,6 @@
 import { createLogger } from '../lib/log.js';
 
 const log = createLogger('sound');
-const KEY = 'cbs.muted';
 
 // Each effect: list of [frequency Hz, start s, duration s, type, gain]
 const EFFECTS = {
@@ -19,17 +18,12 @@ const EFFECTS = {
   lose: [[392, 0, 0.18, 'triangle', 0.2], [311, 0.16, 0.18, 'triangle', 0.2], [262, 0.32, 0.35, 'triangle', 0.2]],
 };
 
-export function createSound() {
+/** @param {{ enabled: () => boolean }} opts sound on/off comes from Settings */
+export function createSound({ enabled = () => true } = {}) {
   let ctx = null;
-  let muted = false;
-  try {
-    muted = localStorage.getItem(KEY) === '1';
-  } catch {
-    /* storage blocked */
-  }
 
   function play(name) {
-    if (muted || !EFFECTS[name]) return;
+    if (!enabled() || !EFFECTS[name]) return;
     try {
       ctx ??= new (window.AudioContext || window.webkitAudioContext)();
       if (ctx.state === 'suspended') ctx.resume();
@@ -51,19 +45,5 @@ export function createSound() {
     }
   }
 
-  return {
-    play,
-    get muted() {
-      return muted;
-    },
-    toggle() {
-      muted = !muted;
-      try {
-        localStorage.setItem(KEY, muted ? '1' : '0');
-      } catch {
-        /* storage blocked */
-      }
-      return muted;
-    },
-  };
+  return { play };
 }

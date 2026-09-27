@@ -2,7 +2,8 @@
 // resignation, end-reason mapping, material/captures bookkeeping and
 // MID-BATTLE PURCHASES ("reinforcements").
 //
-// Reinforcements: gold a side did not spend before the battle is its reserve.
+// Reinforcements: gold a side did not spend before the battle is its reserve,
+// and (rules.bounty) capturing an enemy piece earns bounty gold on top.
 // On its turn a side may, instead of moving, buy a piece and drop it on an
 // empty square of its deployment zone (pawns: pawn rank). That uses the turn.
 // chess.js has no notion of drops, so a drop "rebases" the engine: we build
@@ -11,7 +12,7 @@
 // (segmentFen + moves since the last drop) for the AI, which replays it.
 
 import { Chess } from '../../vendor/chess.js';
-import { CAPS, PIECE_TYPES, PRICES, ZONES } from '../config.js';
+import { CAPS, CAPTURE_BOUNTY, PIECE_TYPES, PRICES, ZONES } from '../config.js';
 import { isAllowedSquare } from './placement.js';
 
 const other = (side) => (side === 'w' ? 'b' : 'w');
@@ -28,14 +29,16 @@ export class Match {
    * @param {object} opts
    * @param {string} opts.startFen
    * @param {{w:number,b:number}} [opts.reserve] gold available for reinforcements
-   * @param {{prices?:object, caps?:object, zones?:object}} [opts.rules]
+   * @param {{prices?:object, caps?:object, zones?:object, shop?:boolean, bounty?:object|null}} [opts.rules]
+   *   shop: may pieces be bought mid-battle (default true); bounty: gold per captured type (null = none)
    */
   constructor({ startFen, reserve = { w: 0, b: 0 }, rules = {} }) {
     this.startFen = startFen;
     this.segmentFen = startFen;
     this.chess = new Chess(startFen); // throws on invalid FEN
     this.reserve = { w: reserve.w ?? 0, b: reserve.b ?? 0 };
-    this.rules = { prices: PRICES, caps: CAPS, zones: ZONES, ...rules };
+    this.rules = { prices: PRICES, caps: CAPS, zones: ZONES, shop: true, bounty: CAPTURE_BOUNTY, ...rules };
+    this._earned = { w: 0, b: 0 };
     this.resigned = null; // side that resigned
     this._captured = { w: [], b: [] };
     this._last = null;
@@ -123,7 +126,15 @@ export class Match {
       throw new Error(`illegal move: ${req.from}${req.to}${req.promotion ?? ''}`);
     }
     const uci = `${m.from}${m.to}${m.promotion ?? ''}`;
-    if (m.captured) this._captured[m.color].push(m.captured);
+    let earned = 0;
+    if (m.captured) {
+      this._captured[m.color].push(m.captured);
+      earned = this.rules.bounty?.[m.captured] ?? 0;
+      if (earned) {
+        this.reserve = { ...this.reserve, [m.color]: this.reserve[m.color] + earned };
+        this._earned[m.color] += earned;
+      }
+    }
     this._last = { from: m.from, to: m.to };
     this._san.push(m.san);
     this._uci.push(uci);
@@ -135,6 +146,7 @@ export class Match {
       color: m.color,
       piece: m.piece,
       captured: m.captured,
+      earned,
       promotion: m.promotion,
       check: this.chess.inCheck(),
       mate: this.status().reason === 'checkmate',
@@ -163,6 +175,7 @@ export class Match {
   /** Why `side` can't drop `type` on `square` right now, or null if it can. */
   dropProblem(type, square, side = this.chess.turn()) {
     const { prices, caps, zones } = this.rules;
+    if (!this.rules.shop) return 'shop-closed';
     if (this.status().over) return 'game-over';
     if (side !== this.chess.turn()) return 'not-your-turn';
     if (!PIECE_TYPES.includes(type)) return 'bad-type';
@@ -237,7 +250,13 @@ export class Match {
     return { over: false, winner: null, reason: null, inCheck, turn };
   }
 
+  /** Total bounty gold each side has earned this battle. */
+  earned() {
+    return { ...this._earned };
+  }
+
   _canBuyAnything(side) {
+    if (!this.rules.shop) return false;
     return PIECE_TYPES.some((t) => this.reserve[side] >= this.rules.prices[t] && this.onBoard(side, t) < this.rules.caps[t]);
   }
 

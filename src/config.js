@@ -4,8 +4,8 @@
 // lives here. After changing prices, caps, levels or AI presets, bump
 // BALANCE_VERSION so telemetry from different balance passes can be told apart.
 
-export const APP_VERSION = '0.2.0'; // keep in sync with package.json + CHANGELOG.md
-export const BALANCE_VERSION = 'b2'; // b2: mid-battle purchases (reinforcements)
+export const APP_VERSION = '0.3.0'; // keep in sync with package.json + CHANGELOG.md
+export const BALANCE_VERSION = 'b3'; // b2: mid-battle purchases; b3: capture bounty + AI shops too
 
 // Buyable piece types, in display order. The king is free and mandatory.
 export const PIECE_TYPES = ['q', 'r', 'b', 'n', 'p'];
@@ -26,11 +26,28 @@ export const PRICES = { q: 9, r: 5, b: 3, n: 3, p: 1 };
 // Stops queen spam in free mode and bounds army size (15 + king = 16 squares).
 export const CAPS = { q: 1, r: 2, b: 2, n: 2, p: 8 };
 
-// Mid-battle purchases ("reinforcements"): gold left unspent after recruiting
-// is kept as a reserve. On your turn you may, instead of moving, buy a piece
-// and drop it on an empty square of your deployment zone (same ZONES as below).
-// Set to false to go back to the b1 rules (buy only before the battle).
-export const BATTLE_PURCHASES = true;
+// Mid-battle purchases ("the shop"): gold left unspent after recruiting is
+// kept, and capturing enemy pieces earns more (CAPTURE_BOUNTY). On your turn
+// you may, instead of moving, buy a piece and drop it on an empty square of
+// your deployment zone (same ZONES as below). Both rules can be switched off
+// by players in Settings; sessions record which rules were in force.
+export const CAPTURE_BOUNTY = { p: 1, n: 1, b: 1, r: 2, q: 4 };
+
+// Gold held in reserve is worth this many centipawns per gold to the AI when it
+// weighs "drop a piece now" against "keep the gold" (below 100 so it prefers
+// to spend when a drop is useful).
+export const AI_GOLD_VALUE_CP = 80;
+
+// Player settings and their defaults (persisted per browser).
+export const DEFAULT_SETTINGS = {
+  sound: true,
+  showHints: true, // legal-move dots
+  showCoords: true,
+  animations: true,
+  campaignAI: 'normal', // AI preset for campaign levels
+  battleShop: true, // rule: buy + drop pieces during the battle
+  captureBounty: true, // rule: earn CAPTURE_BOUNTY gold for captures
+};
 
 // Where each side may place pieces before the battle (ranks are 1..8).
 // Non-pawns may use any rank in `ranks`; pawns only `pawnRanks`.

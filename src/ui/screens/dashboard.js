@@ -162,13 +162,13 @@ export function mount(root, ctx) {
     const date = new Date().toISOString().slice(0, 10);
 
     const scopeChip = (value, label) =>
-      h('button', { class: `chip${filter.scope === value ? ' active' : ''}`, type: 'button', onclick: () => ((filter.scope = value), paint()) }, label);
+      h('button', { class: `choice${filter.scope === value ? ' on' : ''}`, type: 'button', onclick: () => ((filter.scope = value), paint()) }, label);
 
     fill(el, 
       h(
         'header',
         { class: 'dash-head' },
-        h('div', {}, h('p', { class: 'eyebrow' }, 'Designer view'), h('h2', {}, 'Playtest data')),
+        h('div', {}, h('p', { class: 'kicker' }, 'Designer view'), h('h2', {}, 'Playtest data')),
         h(
           'div',
           { class: 'dash-actions' },
@@ -202,7 +202,7 @@ export function mount(root, ctx) {
       all.length === 0
         ? h(
             'div',
-            { class: 'panel empty' },
+            { class: 'box empty' },
             h('h3', {}, 'No playtest data yet'),
             h('p', {}, 'Every game played in this browser is recorded here automatically (nothing leaves the device). To collect data from testers on other machines, ask them to click “Download your play data” on the result screen and send you the file, then Import it here.'),
           )
@@ -218,22 +218,22 @@ export function mount(root, ctx) {
             h(
               'div',
               { class: 'dash-grid' },
-              h('div', { class: 'panel span2' }, h('h3', {}, 'Armies — the balance view'), armyTable(sessions)),
+              h('div', { class: 'box span2' }, h('h3', {}, 'Armies — the balance view'), armyTable(sessions)),
               h(
                 'div',
-                { class: 'panel' },
+                { class: 'box' },
                 h('h3', {}, 'What players buy'),
                 pieces.map((p) => hbar(h('span', { class: 'with-icon' }, pieceImg('w', p.type), PIECE_NAMES[p.type]), p.pickRate, 1, `${pct(p.pickRate)} · ${p.avgCount.toFixed(1)}`, 'ally')),
               ),
               h(
                 'div',
-                { class: 'panel' },
+                { class: 'box' },
                 h('h3', {}, 'How games end'),
                 REASONS.filter((r) => reasons[r]).map((r) => hbar(r, reasons[r], reasonMax, reasons[r], r === 'checkmate' ? 'ok' : r === 'abandoned' ? 'muted' : 'warn')),
                 Object.keys(reasons).length ? null : h('p', { class: 'dim' }, '–'),
               ),
-              h('div', { class: 'panel span2' }, h('h3', {}, 'Learning curve'), h('p', { class: 'dim small' }, 'Win rate by attempt number'), curve(sessions)),
-              h('div', { class: 'panel span3' }, h('h3', {}, 'Recent sessions'), sessionList(sessions) ?? h('p', { class: 'dim' }, 'None in this selection.')),
+              h('div', { class: 'box span2' }, h('h3', {}, 'Learning curve'), h('p', { class: 'dim small' }, 'Win rate by attempt number'), curve(sessions)),
+              h('div', { class: 'box span3' }, h('h3', {}, 'Recent sessions'), sessionList(sessions) ?? h('p', { class: 'dim' }, 'None in this selection.')),
             ),
           ],
     );

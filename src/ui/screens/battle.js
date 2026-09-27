@@ -1,14 +1,17 @@
-// Battle screen: plays one Match. Humans move by click or drag; the AI moves
-// through ctx.ai (Web Worker). Every ply is recorded to telemetry; the result
-// modal offers rematch / change army / menu and a playtest-data download.
+// Battle screen: plays one Match.
+//   level / free : human(s) vs AI or hotseat; every ply is recorded to telemetry.
+//   demo         : AI vs AI, with a commentary column and an evaluation bar, and
+//                  auto-continues a series (not recorded — it isn't a playtest).
+// The shop: on your turn you may buy a piece with your gold (unspent recruit
+// money + capture bounties) and drop it into your zone instead of moving.
 
-import { AI_MIN_THINK_MS, AI_PRESETS, BATTLE_PURCHASES, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
+import { AI_MIN_THINK_MS, AI_PRESETS, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
 import { armyLabel } from '../../core/army.js';
 import { Match } from '../../core/game.js';
 import { buildFen } from '../../core/placement.js';
 import { randomSeed } from '../../lib/rng.js';
 import { createBoard, piecesFromBoard } from '../board.js';
-import { fill, downloadText, formatDuration, h, pieceImg } from '../dom.js';
+import { downloadText, fill, formatDuration, h, pieceImg } from '../dom.js';
 
 const REASON_TEXT = {
   checkmate: 'Checkmate',
@@ -19,15 +22,21 @@ const REASON_TEXT = {
   resign: 'Resignation',
 };
 const SIDE = { w: 'White', b: 'Black' };
+const NO_RECORD = { begin() {}, startBattle() {}, ply() {}, drop() {}, end() {}, abandon() {} };
 
 export function mount(root, ctx, params) {
+  const demo = params.mode === 'demo';
   const hotseat = params.opponent === 'hotseat';
-  const human = { w: true, b: hotseat };
-  const preset = AI_PRESETS[params.aiPreset] ?? AI_PRESETS.normal;
+  const human = { w: !demo, b: hotseat };
+  const presetKey = (side) => (demo ? params.demo.presets[side] : params.aiPreset ?? 'normal');
+  const presetOf = (side) => AI_PRESETS[presetKey(side)] ?? AI_PRESETS.normal;
   const level = params.levelId ? LEVELS.find((l) => l.id === params.levelId) : null;
+  const settings = ctx.settings.get();
+  const rules = params.rules ?? ctx.settings.rules();
+  const rec = demo ? NO_RECORD : ctx.recorder;
 
   if (params.reusedArmy) {
-    ctx.recorder.begin({
+    rec.begin({
       mode: params.mode,
       levelId: params.levelId ?? null,
       opponent: params.opponent,
@@ -35,13 +44,17 @@ export function mount(root, ctx, params) {
       budget: params.budget,
       playerSide: params.playerSide,
       reusedArmy: true,
+      rules,
     });
   }
   const startFen = buildFen(params.white.placement, params.black.placement);
-  // Unspent gold becomes each HUMAN side's reinforcement reserve (the AI never keeps any).
-  const reserveOf = (side) => (BATTLE_PURCHASES && human[side] ? params[side === 'w' ? 'white' : 'black'].reserve ?? 0 : 0);
-  const match = new Match({ startFen, reserve: { w: reserveOf('w'), b: reserveOf('b') } });
-  ctx.recorder.startBattle({ white: params.white, black: params.black, startFen });
+  const reserveOf = (side) => (rules.battleShop ? params[side === 'w' ? 'white' : 'black'].reserve ?? 0 : 0);
+  const match = new Match({
+    startFen,
+    reserve: { w: reserveOf('w'), b: reserveOf('b') },
+    rules: { shop: rules.battleShop, ...(rules.captureBounty ? {} : { bounty: null }) },
+  });
+  rec.startBattle({ white: params.white, black: params.black, startFen });
   window.__cbs.match = match;
   const startedAt = performance.now();
 
@@ -52,15 +65,21 @@ export function mount(root, ctx, params) {
   let alive = true;
   let confirmResign = false;
   let promo = null; // { from, to }
-  let dropType = null; // reinforcement being placed
+  let dropType = null; // shop piece being placed
+  let evalWhite = 0; // last AI evaluation, centipawns from White's view (demo)
+  const notes = []; // demo commentary, newest first
 
   // ---------------------------------------------------------------- layout
-  const left = h('aside', { class: 'panel battle-side' });
+  const left = h('aside', { class: 'side-col' });
   const boardWrap = h('div', { class: 'board-wrap' });
-  const promoEl = h('div', { class: 'promo', hidden: true });
-  const right = h('aside', { class: 'panel battle-log' });
+  const promoEl = h('div', { class: 'overlay', hidden: true });
+  const evalBar = demo ? h('div', { class: 'eval-bar', 'aria-hidden': 'true' }, h('div', { class: 'eval-fill' })) : null;
+  const right = h('aside', { class: 'side-col log-col' });
   const modal = h('div', { class: 'modal-backdrop', hidden: true });
-  root.append(h('section', { class: 'stage battle' }, left, h('div', { class: 'center' }, boardWrap, promoEl), right), modal);
+  root.append(
+    h('section', { class: `stage battle${demo ? ' demo' : ''}` }, left, h('div', { class: 'center' }, evalBar, boardWrap, promoEl), right),
+    modal,
+  );
 
   const board = createBoard(boardWrap, {
     orientation: 'w',
@@ -72,17 +91,19 @@ export function mount(root, ctx, params) {
 
   const canAct = () => !ended && !thinking && !promo && human[match.turn()];
 
+  // ---------------------------------------------------------------- human input
   function select(sq) {
     dropType = null;
     selected = sq;
     targets = match.legalMovesFrom(sq).map((m) => ({ square: m.to, capture: !!m.captured }));
     paintBoard();
+    paintPanels();
   }
 
   function clickSquare(sq) {
     if (!canAct()) return;
     if (dropType) {
-      if (targets.some((t) => t.square === sq)) return reinforce(dropType, sq);
+      if (targets.some((t) => t.square === sq)) return buyAndDrop(dropType, sq);
       dropType = null;
       targets = [];
     }
@@ -92,6 +113,7 @@ export function mount(root, ctx, params) {
     selected = null;
     targets = [];
     paintBoard();
+    paintPanels();
   }
 
   function attempt(from, to) {
@@ -109,7 +131,7 @@ export function mount(root, ctx, params) {
     play({ from, to });
   }
 
-  function chooseReinforcement(type) {
+  function chooseShopPiece(type) {
     if (!canAct()) return;
     if (dropType === type) {
       dropType = null;
@@ -123,26 +145,30 @@ export function mount(root, ctx, params) {
     paintPanels();
   }
 
-  function reinforce(type, square) {
+  // ---------------------------------------------------------------- turns
+  function buyAndDrop(type, square) {
     const r = match.drop(type, square);
     dropType = null;
     selected = null;
     targets = [];
-    ctx.recorder.drop({ side: r.color, type, square, cost: r.cost, san: r.san, materialDiff: match.material().diff });
+    rec.drop({ side: r.color, type, square, cost: r.cost, san: r.san, materialDiff: match.material().diff });
     ctx.sound.play(r.check ? 'check' : 'buy');
-    afterTurn(r, null);
+    afterTurn(null);
+    return r;
   }
 
   function play(move) {
     const r = match.move(move);
     selected = null;
     targets = [];
-    ctx.recorder.ply({ san: r.san, materialDiff: match.material().diff });
+    rec.ply({ san: r.san, materialDiff: match.material().diff });
     ctx.sound.play(r.check ? 'check' : r.captured ? 'capture' : 'move');
-    afterTurn(r, { from: r.from, to: r.to });
+    if (r.earned && human[r.color] && !demo) ctx.toast(`+${r.earned} gold bounty for the ${PIECE_NAMES[r.captured].toLowerCase()}`);
+    afterTurn({ from: r.from, to: r.to });
+    return r;
   }
 
-  function afterTurn(r, animate) {
+  function afterTurn(animate) {
     paintBoard(animate);
     paintPanels();
     const status = match.status();
@@ -153,20 +179,49 @@ export function mount(root, ctx, params) {
   async function aiTurn() {
     thinking = true;
     paintPanels();
+    const side = match.turn();
+    const preset = presetOf(side);
     const t0 = performance.now();
+    const minThink = demo ? params.demo.speedMs : AI_MIN_THINK_MS;
     try {
-      const result = await ctx.ai.chooseMove({ ...match.aiRequest(), preset, seed: randomSeed() });
-      const wait = AI_MIN_THINK_MS - (performance.now() - t0);
+      const result = await ctx.ai.chooseMove({
+        ...match.aiRequest(),
+        preset,
+        seed: randomSeed(),
+        shop: rules.battleShop && match.reserve[side] > 0 ? { reserve: match.reserve[side] } : null,
+      });
+      const wait = minThink - (performance.now() - t0);
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       if (!alive || ended) return;
       thinking = false;
-      play({ from: result.from, to: result.to, promotion: result.promotion });
+      evalWhite = side === 'w' ? result.score : -result.score;
+      const moveNo = Math.floor(match.plies() / 2) + 1;
+      const r = result.drop ? buyAndDrop(result.drop.type, result.drop.square) : play({ from: result.from, to: result.to, promotion: result.promotion });
+      if (demo) comment(side, moveNo, result, r);
     } catch (e) {
       ctx.log.error('AI failed', e);
       thinking = false;
-      if (alive) ctx.toast('The enemy AI failed to move — you may resign or return to the menu.', 'warn');
+      if (alive) ctx.toast('The AI failed to move — resign or go back to the menu.', 'warn');
       paintPanels();
     }
+  }
+
+  /** Demo commentary: what the AI saw and why this move is interesting. */
+  function comment(side, moveNo, result, r) {
+    const bits = [];
+    if (result.drop) bits.push(`bought a ${PIECE_NAMES[result.drop.type].toLowerCase()} for ${result.drop.cost} g`);
+    if (r.captured) bits.push(`wins a ${PIECE_NAMES[r.captured].toLowerCase()}`);
+    if (r.earned) bits.push(`+${r.earned} g bounty`);
+    if (result.mate > 0) bits.push(`sees mate in ${result.mate}`);
+    if (result.mate < 0) bits.push(`sees it is lost (mate in ${-result.mate})`);
+    notes.unshift({
+      side,
+      text: `${moveNo}${side === 'w' ? '.' : '…'} ${r.san}`,
+      who: presetOf(side).label,
+      detail: `${result.depth} ply · ${result.nodes.toLocaleString()} positions · ${result.candidates} option${result.candidates === 1 ? '' : 's'} kept${bits.length ? ' — ' + bits.join(', ') : ''}`,
+    });
+    notes.length = Math.min(notes.length, 40);
+    paintPanels();
   }
 
   function resign() {
@@ -175,45 +230,62 @@ export function mount(root, ctx, params) {
       confirmResign = true;
       return paintPanels();
     }
-    const side = hotseat ? match.turn() : 'w';
-    match.resign(side);
+    match.resign(hotseat ? match.turn() : 'w');
     finish(match.status());
   }
 
   function finish(status) {
     ended = true;
     thinking = false;
-    ctx.recorder.end({ winner: status.winner, reason: status.reason, pgn: match.pgn(), finalFen: match.fen() });
-    const youWon = hotseat ? null : status.winner === 'w';
-    ctx.sound.play(status.winner === null ? 'lose' : hotseat || youWon ? 'win' : 'lose');
+    rec.end({ winner: status.winner, reason: status.reason, pgn: match.pgn(), finalFen: match.fen() });
+    if (!demo) ctx.sound.play(status.winner === null ? 'lose' : hotseat || status.winner === 'w' ? 'win' : 'lose');
     paintBoard();
     paintPanels();
+    if (demo) return demoNext(status);
     setTimeout(() => alive && showResult(status), 650);
+  }
+
+  function demoNext(status) {
+    const series = { ...params.demo.series };
+    series.games += 1;
+    if (status.winner === 'w') series.w += 1;
+    else if (status.winner === 'b') series.b += 1;
+    else series.d += 1;
+    params.demo.series = series;
+    notes.unshift({ side: null, text: `Game ${series.games}: ${status.winner ? `${SIDE[status.winner]} wins` : 'draw'} (${REASON_TEXT[status.reason] ?? status.reason})`, who: '', detail: '' });
+    paintPanels();
+    if (params.demo.autoNext) setTimeout(() => alive && ctx.go('demo', { continue: { ...params.demo, series } }), 2600);
   }
 
   // ---------------------------------------------------------------- render
   function paintBoard(animate) {
-    board.render(piecesFromBoard(match.board()), animate);
+    board.render(piecesFromBoard(match.board()), animate && settings.animations ? animate : undefined);
     board.el.classList.toggle('drop-mode', !!dropType);
     const st = match.status();
     board.highlight({
       selected,
-      targets,
+      targets: dropType || settings.showHints ? targets : [],
       zone: dropType ? targets.map((t) => t.square) : [],
       lastMove: match.lastMove(),
       check: st.inCheck && st.reason !== 'resign' ? match.kingSquare(match.turn()) : null,
     });
+    if (evalBar) {
+      const cp = Math.max(-1000, Math.min(1000, evalWhite)); // ±10 pawns (or mate) fills the bar
+      evalBar.firstChild.style.height = `${50 + cp / 20}%`;
+      evalBar.title = `Evaluation ${(evalWhite / 100).toFixed(1)} for White`;
+    }
   }
 
   function paintPromo() {
     promoEl.hidden = !promo;
     if (!promo) return fill(promoEl);
     const color = match.turn();
-    fill(promoEl, 
+    fill(
+      promoEl,
       h(
         'div',
-        { class: 'promo-card' },
-        h('p', {}, 'Promote to'),
+        { class: 'dialog small' },
+        h('h3', {}, 'Promote to'),
         h(
           'div',
           { class: 'promo-row' },
@@ -236,107 +308,144 @@ export function mount(root, ctx, params) {
             ),
           ),
         ),
-        h('button', { class: 'btn ghost small', type: 'button', onclick: () => ((promo = null), paintPromo(), paintBoard()) }, 'Cancel'),
+        h('button', { class: 'btn quiet', type: 'button', onclick: () => ((promo = null), paintPromo(), paintBoard()) }, 'Cancel'),
       ),
     );
   }
 
-  function armyCard(side) {
+  function sideBlock(side) {
     const p = side === 'w' ? params.white : params.black;
-    const who = hotseat ? SIDE[side] : side === 'w' ? 'You' : `Enemy · ${preset.label}`;
+    const who = demo ? `${SIDE[side]} · ${presetOf(side).label}` : hotseat ? SIDE[side] : side === 'w' ? 'You · White' : `Enemy · ${presetOf('b').label}`;
     const caps = match.captured()[side];
     const mat = match.material();
     const lead = side === 'w' ? mat.diff : -mat.diff;
     const toMove = !ended && match.turn() === side;
     return h(
       'div',
-      { class: `army-card ${side === 'w' ? 'ally' : 'enemy'}${toMove ? ' to-move' : ''}` },
-      h('div', { class: 'army-head' }, h('span', { class: 'dot' }), h('b', {}, who), lead > 0 ? h('span', { class: 'lead num' }, `+${lead}`) : null),
-      h('div', { class: 'army-label' }, armyLabel(p.army)),
-      h('div', { class: 'captures' }, caps.length ? caps.map((t) => pieceImg(side === 'w' ? 'b' : 'w', t, 'cap')) : h('span', { class: 'dim' }, 'No captures yet')),
+      { class: `side-block ${side === 'w' ? 'ally' : 'enemy'}${toMove ? ' to-move' : ''}` },
+      h('div', { class: 'side-head' }, h('span', { class: 'side-name' }, who), lead > 0 ? h('span', { class: 'lead num' }, `+${lead}`) : null),
+      h('div', { class: 'side-meta' }, h('span', {}, armyLabel(p.army)), rules.battleShop ? h('span', { class: 'num gold' }, `${match.reserve[side]} g`) : null),
+      caps.length ? h('div', { class: 'captures' }, caps.map((t) => pieceImg(side === 'w' ? 'b' : 'w', t, 'cap'))) : null,
     );
   }
 
-  /** Reinforcement shop for the human side to move (or the player's side while waiting). */
-  function reinforcements() {
+  /** The shop for the human side to move (or the player's side while waiting). */
+  function shop() {
+    if (demo || !rules.battleShop) return null;
     const side = hotseat ? match.turn() : 'w';
-    if (!BATTLE_PURCHASES || !human[side]) return null;
+    if (!human[side]) return null;
     const gold = match.reserve[side];
     const myTurn = canAct() && match.turn() === side;
     const droppable = myTurn ? new Set(match.droppableTypes()) : new Set();
     return h(
       'div',
-      { class: `reinforce${dropType ? ' active' : ''}`, dataset: { testid: 'reinforcements' } },
-      h('div', { class: 'reinforce-head' }, h('b', {}, hotseat ? `${SIDE[side]} reserve` : 'War chest'), h('span', { class: 'purse-value small' }, h('i', { class: 'coin sm' }), h('b', { class: 'num' }, gold))),
-      gold > 0
-        ? h(
-            'div',
-            { class: 'reinforce-row' },
-            PIECE_TYPES.map((t) =>
-              h(
-                'button',
-                {
-                  class: `reinforce-btn${dropType === t ? ' on' : ''}`,
-                  type: 'button',
-                  disabled: !droppable.has(t),
-                  'aria-pressed': String(dropType === t),
-                  'aria-label': `Reinforce with a ${PIECE_NAMES[t]} for ${PRICES[t]} gold`,
-                  title: `${PIECE_NAMES[t]} · ${PRICES[t]} gold`,
-                  dataset: { testid: `reinforce-${t}` },
-                  onclick: () => chooseReinforcement(t),
-                },
-                pieceImg(side, t),
-                h('span', { class: 'num' }, PRICES[t]),
-              ),
-            ),
-          )
-        : h('p', { class: 'dim small' }, 'Spent. Keep gold unspent when recruiting to call reinforcements mid-battle.'),
-      dropType ? h('p', { class: 'small reinforce-hint' }, `Place the ${PIECE_NAMES[dropType].toLowerCase()} on a highlighted square — this uses your turn.`) : null,
+      { class: `battle-shop${dropType ? ' active' : ''}`, dataset: { testid: 'reinforcements' } },
+      h('div', { class: 'section-head' }, h('span', {}, hotseat ? `${SIDE[side]}'s shop` : 'Shop'), h('span', { class: 'num gold' }, `${gold} g`)),
+      h(
+        'div',
+        { class: 'shop-row' },
+        PIECE_TYPES.map((t) =>
+          h(
+            'button',
+            {
+              class: `shop-tile${dropType === t ? ' on' : ''}`,
+              type: 'button',
+              disabled: !droppable.has(t),
+              'aria-pressed': String(dropType === t),
+              'aria-label': `Buy a ${PIECE_NAMES[t]} for ${PRICES[t]} gold and drop it`,
+              title: `${PIECE_NAMES[t]}: ${PRICES[t]} gold`,
+              dataset: { testid: `reinforce-${t}` },
+              onclick: () => chooseShopPiece(t),
+            },
+            pieceImg(side, t),
+            h('span', { class: 'num' }, PRICES[t]),
+          ),
+        ),
+      ),
+      h(
+        'p',
+        { class: 'fine' },
+        dropType
+          ? `Put the ${PIECE_NAMES[dropType].toLowerCase()} on a marked square. Buying uses your turn.`
+          : rules.captureBounty
+            ? 'Buy a piece instead of moving. Captures pay a bounty.'
+            : 'Buy a piece instead of moving.',
+      ),
     );
   }
 
   function statusText() {
     const st = match.status();
     if (st.over) {
-      if (st.winner === null) return `Draw — ${REASON_TEXT[st.reason]}`;
-      return `${hotseat ? SIDE[st.winner] : st.winner === 'w' ? 'Victory' : 'Defeat'} — ${REASON_TEXT[st.reason]}`;
+      if (st.winner === null) return `Draw. ${REASON_TEXT[st.reason]}.`;
+      const head = demo || hotseat ? `${SIDE[st.winner]} wins` : st.winner === 'w' ? 'You win' : 'You lose';
+      return `${head}. ${REASON_TEXT[st.reason]}.`;
     }
-    if (thinking) return 'Enemy is thinking…';
+    if (thinking) return demo ? `${SIDE[st.turn]} is thinking…` : 'Enemy is thinking…';
     const who = hotseat ? `${SIDE[st.turn]} to move` : 'Your move';
-    return st.inCheck ? `${who} — check!` : who;
+    return st.inCheck ? `${who}. Check!` : who;
   }
 
   function paintPanels() {
-    fill(left, 
-      armyCard('b'),
+    const actions = demo
+      ? h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', dataset: { testid: 'demo-stop' }, onclick: () => ctx.go('demo', {}) }, 'Stop demo'))
+      : h(
+          'div',
+          { class: 'actions' },
+          ended
+            ? h('button', { class: 'btn', type: 'button', onclick: () => showResult(match.status()) }, 'Show result')
+            : confirmResign
+              ? [
+                  h('button', { class: 'btn danger', type: 'button', dataset: { testid: 'resign-confirm' }, onclick: resign }, 'Confirm resign'),
+                  h('button', { class: 'btn quiet', type: 'button', onclick: () => ((confirmResign = false), paintPanels()) }, 'Keep playing'),
+                ]
+              : h('button', { class: 'btn quiet', type: 'button', dataset: { testid: 'resign' }, onclick: resign }, hotseat ? `${SIDE[match.turn()]} resigns` : 'Resign'),
+        );
+    fill(
+      left,
+      sideBlock('b'),
       h('div', { class: `status${thinking ? ' thinking' : ''}`, dataset: { testid: 'battle-status' }, role: 'status' }, statusText()),
-      armyCard('w'),
-      reinforcements(),
-      h(
-        'div',
-        { class: 'battle-actions' },
-        ended
-          ? h('button', { class: 'btn', type: 'button', onclick: () => showResult(match.status()) }, 'Show result')
-          : confirmResign
-            ? [
-                h('button', { class: 'btn danger', type: 'button', dataset: { testid: 'resign-confirm' }, onclick: resign }, 'Confirm resign'),
-                h('button', { class: 'btn ghost', type: 'button', onclick: () => ((confirmResign = false), paintPanels()) }, 'Keep playing'),
-              ]
-            : h('button', { class: 'btn ghost', type: 'button', dataset: { testid: 'resign' }, onclick: resign }, hotseat ? `${SIDE[match.turn()]} resigns` : 'Resign'),
-      ),
+      sideBlock('w'),
+      shop(),
+      actions,
     );
+
     const sans = match.history();
     const rows = [];
     for (let i = 0; i < sans.length; i += 2) {
-      rows.push(h('li', {}, h('span', { class: 'mv-n num' }, `${i / 2 + 1}.`), h('span', { class: 'mv num' }, sans[i]), h('span', { class: 'mv num' }, sans[i + 1] ?? '')));
+      rows.push(h('li', {}, h('span', { class: 'mv-n num' }, `${i / 2 + 1}`), h('span', { class: 'mv num' }, sans[i]), h('span', { class: 'mv num' }, sans[i + 1] ?? '')));
     }
     const list = h('ol', { class: 'moves' }, rows);
-    fill(right, 
-      h('p', { class: 'eyebrow' }, level ? `Level 1 · ${level.name}` : hotseat ? 'Free mode · hotseat' : `Free mode · vs ${preset.label}`),
-      h('h3', {}, 'Moves'),
-      sans.length ? list : h('p', { class: 'dim' }, 'White moves first.'),
-    );
-    list.scrollTop = list.scrollHeight;
+    const title = level ? `Level 1: ${level.name}` : demo ? 'Demo: AI vs AI' : hotseat ? 'Free mode, hotseat' : `Free mode vs ${presetOf('b').label}`;
+    if (demo) {
+      const s = params.demo.series;
+      fill(
+        right,
+        h('div', { class: 'section-head' }, h('span', {}, title)),
+        h(
+          'p',
+          { class: 'fine' },
+          `Both sides get the same army. ${presetOf('w').label} looks ${presetOf('w').depth} ply ahead and ${presetOf('b').label} looks ${presetOf('b').depth}. The running score shows how much the extra thinking is worth.`,
+        ),
+        h(
+          'table',
+          { class: 'series', dataset: { testid: 'demo-series' } },
+          h('tr', {}, h('th', {}, `White · ${presetOf('w').label}`), h('th', {}, 'Draws'), h('th', {}, `Black · ${presetOf('b').label}`)),
+          h('tr', {}, h('td', { class: 'num' }, s.w), h('td', { class: 'num' }, s.d), h('td', { class: 'num' }, s.b)),
+        ),
+        h('div', { class: 'section-head sub' }, h('span', {}, 'Commentary')),
+        h(
+          'ol',
+          { class: 'notes' },
+          notes.map((n) =>
+            h('li', { class: n.side === 'w' ? 'ally' : n.side === 'b' ? 'enemy' : 'result' }, h('b', { class: 'num' }, n.text), n.who ? h('span', { class: 'who' }, ` ${n.who}`) : null, n.detail ? h('span', { class: 'fine' }, n.detail) : null),
+          ),
+        ),
+      );
+    } else {
+      fill(right, h('div', { class: 'section-head' }, h('span', {}, title)), sans.length ? list : h('p', { class: 'fine' }, 'White moves first.'));
+      list.scrollTop = list.scrollHeight;
+    }
   }
 
   function showResult(status) {
@@ -347,38 +456,45 @@ export function mount(root, ctx, params) {
     const ms = performance.now() - startedAt;
     const again = () => ctx.go('battle', { ...params, reusedArmy: true });
     const change = () => (params.mode === 'level' ? ctx.go('setup', { mode: 'level', levelId: params.levelId }) : ctx.go('draft', {}));
+    const drops = match.drops();
     modal.hidden = false;
-    fill(modal, 
+    fill(
+      modal,
       h(
         'div',
-        { class: `modal result ${draw ? 'draw' : hotseat || win ? 'win' : 'loss'}`, role: 'dialog', 'aria-modal': 'true', dataset: { testid: 'result-modal' } },
-        h('p', { class: 'eyebrow' }, REASON_TEXT[status.reason] ?? ''),
+        { class: `dialog result ${draw ? 'draw' : hotseat || win ? 'win' : 'loss'}`, role: 'dialog', 'aria-modal': 'true', dataset: { testid: 'result-modal' } },
+        h('p', { class: 'kicker' }, REASON_TEXT[status.reason] ?? ''),
         h('h2', {}, title),
         h(
           'dl',
-          { class: 'result-stats' },
-          h('div', {}, h('dt', {}, 'Moves'), h('dd', { class: 'num' }, Math.ceil(match.plies() / 2))),
-          h('div', {}, h('dt', {}, 'Time'), h('dd', { class: 'num' }, formatDuration(ms))),
-          h('div', {}, h('dt', {}, hotseat ? 'White' : 'Your army'), h('dd', {}, armyLabel(params.white.army))),
-          h('div', {}, h('dt', {}, hotseat ? 'Black' : 'Enemy'), h('dd', {}, armyLabel(params.black.army))),
-          s?.attempt ? h('div', {}, h('dt', {}, 'Attempt'), h('dd', { class: 'num' }, `#${s.attempt}`)) : null,
+          { class: 'facts' },
+          h('dt', {}, 'Moves'),
+          h('dd', { class: 'num' }, Math.ceil(match.plies() / 2)),
+          h('dt', {}, 'Time'),
+          h('dd', { class: 'num' }, formatDuration(ms)),
+          h('dt', {}, hotseat ? 'White' : 'Your army'),
+          h('dd', {}, armyLabel(params.white.army)),
+          h('dt', {}, hotseat ? 'Black' : 'Enemy'),
+          h('dd', {}, armyLabel(params.black.army)),
+          drops.length ? [h('dt', {}, 'Bought mid-battle'), h('dd', { class: 'num' }, drops.map((d) => `${d.type.toUpperCase()}@${d.square}`).join(' '))] : null,
+          s?.attempt ? [h('dt', {}, 'Attempt'), h('dd', { class: 'num' }, `#${s.attempt}`)] : null,
         ),
         h(
           'div',
-          { class: 'modal-actions' },
-          h('button', { class: 'btn primary', type: 'button', dataset: { testid: 'result-rematch' }, onclick: again }, 'Rematch (same army)'),
+          { class: 'actions column' },
+          h('button', { class: 'btn primary', type: 'button', dataset: { testid: 'result-rematch' }, onclick: again }, 'Rematch with the same army'),
           h('button', { class: 'btn', type: 'button', dataset: { testid: 'result-change-army' }, onclick: change }, params.mode === 'level' ? 'Change army' : 'New draft'),
-          h('button', { class: 'btn ghost', type: 'button', dataset: { testid: 'result-menu' }, onclick: () => ctx.go('menu') }, 'Menu'),
+          h('button', { class: 'btn quiet', type: 'button', dataset: { testid: 'result-menu' }, onclick: () => ctx.go('menu') }, 'Menu'),
         ),
         h(
           'button',
           {
-            class: 'link-btn',
+            class: 'link',
             type: 'button',
             dataset: { testid: 'download-data' },
             onclick: () => downloadText(`cbs-playtest-${new Date().toISOString().slice(0, 10)}.json`, ctx.store.exportJSON()),
           },
-          'Playtesting? Download your play data (JSON) and send it to the designers.',
+          'Playtesting for us? Download your play data and send us the file.',
         ),
       ),
     );
@@ -387,10 +503,11 @@ export function mount(root, ctx, params) {
 
   paintBoard();
   paintPanels();
+  if (!human[match.turn()]) aiTurn();
 
   return () => {
     alive = false;
-    if (!ended) ctx.recorder.abandon();
+    if (!ended) rec.abandon();
     if (window.__cbs.match === match) window.__cbs.match = null;
     board.destroy();
   };

@@ -54,7 +54,7 @@ export function createRecorder({ store, now = () => Date.now() }) {
       return current ? JSON.parse(JSON.stringify(current)) : null;
     },
 
-    begin({ mode, levelId = null, opponent = 'ai', aiPreset = null, budget, playerSide = 'w', reusedArmy = false }) {
+    begin({ mode, levelId = null, opponent = 'ai', aiPreset = null, budget, playerSide = 'w', reusedArmy = false, rules = null }) {
       if (current) this.abandon();
       t0 = now();
       const previous = store
@@ -74,6 +74,7 @@ export function createRecorder({ store, now = () => Date.now() }) {
         playerSide,
         attempt: previous + 1,
         reusedArmy,
+        rules, // e.g. { battleShop: true, captureBounty: true } — the rule settings in force
         startedAt: iso(t0),
         battleStartedAt: null,
         endedAt: null,

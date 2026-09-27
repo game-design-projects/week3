@@ -233,3 +233,46 @@ test('phone width 390x844: no horizontal scroll on setup and battle', async () =
   assert.deepEqual(errors, []);
   await context.close();
 });
+
+test('settings: hide hints, close the battle shop; persisted across reload', async () => {
+  const { context, page, errors } = await open();
+  await page.click(tid('menu-settings'));
+  await page.screenshot({ path: `${ART}settings-1280.png` });
+  await page.click(tid('setting-showHints'));
+  await page.click(tid('setting-battleShop'));
+  await page.reload();
+  await page.waitForSelector(tid('menu-level-L1'));
+  const s = await page.evaluate(() => window.__cbs.ctx.settings.get());
+  assert.equal(s.showHints, false);
+  assert.equal(s.battleShop, false);
+  await page.click(tid('menu-level-L1'));
+  await page.click(tid('buy-r'));
+  await page.click(tid('start-battle'));
+  await page.waitForFunction(() => !!window.__cbs.match);
+  assert.equal(await page.$(tid('reinforcements')), null, 'no shop when the house rule is off');
+  const from = await page.evaluate(() => window.__cbs.match.board().flat().find((p) => p && p.color === 'w' && window.__cbs.match.legalMovesFrom(p.square).length).square);
+  await page.click(`[data-square="${from}"]`);
+  assert.equal(await page.$$eval('.sq.target, .sq.capture-target', (els) => els.length), 0, 'hints hidden');
+  const active = await page.evaluate(() => window.__cbs.ctx.recorder.active());
+  assert.deepEqual(active.rules, { battleShop: false, captureBounty: true });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('demo: AI vs AI plays on its own with commentary, and records nothing', async () => {
+  const { context, page, errors } = await open();
+  await page.click(tid('menu-demo'));
+  await page.screenshot({ path: `${ART}demo-options-1280.png` });
+  await page.click(tid('demo-speed-fast'));
+  await page.click(tid('demo-start'));
+  await page.waitForFunction(() => window.__cbs.match?.plies() >= 6, null, { timeout: 30000 });
+  assert.ok((await page.$$('.notes li')).length >= 5, 'commentary lines');
+  assert.match(await page.textContent(tid('demo-series')), /Warlord/);
+  assert.deepEqual(await noPageScroll(page), { v: true, h: true }, 'demo fits 1280x720');
+  await page.screenshot({ path: `${ART}demo-1280.png` });
+  await page.click(tid('demo-stop'));
+  assert.equal((await sessions(page)).length, 0, 'demo games are not playtest data');
+  assert.equal(await page.evaluate(() => window.__cbs.ctx.recorder.active()), null);
+  assert.deepEqual(errors, []);
+  await context.close();
+});

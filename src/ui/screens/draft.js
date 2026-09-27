@@ -22,34 +22,47 @@ export function mount(root, ctx) {
 
   const isHuman = (side) => opts.opponent === 'hotseat' || side === 'w';
 
-  function chip(label, active, testid, onclick) {
-    return h('button', { class: `chip${active ? ' active' : ''}`, type: 'button', 'aria-pressed': String(active), dataset: { testid }, onclick }, label);
+  function choice(label, active, testid, onclick) {
+    return h('button', { class: `choice${active ? ' on' : ''}`, type: 'button', 'aria-pressed': String(active), dataset: { testid }, onclick }, label);
   }
 
   function paintOptions() {
-    fill(el, 
+    fill(
+      el,
       h(
         'div',
-        { class: 'panel draft-options' },
-        h('p', { class: 'eyebrow' }, 'Free mode'),
-        h('h2', {}, 'The Draft'),
-        h('p', { class: 'dim' }, 'Both sides get the same purse and take turns buying one piece. Passing locks your army — any gold left becomes your war chest for mid-battle reinforcements. Black picks first; White moves first.'),
-        h('h3', {}, 'Budget'),
-        h('div', { class: 'chips' }, FREE_MODE.budgets.map((b) => chip([h('i', { class: 'coin sm' }), ` ${b}`], opts.budget === b, `free-budget-${b}`, () => ((opts.budget = b), paintOptions())))),
-        h('h3', {}, 'Opponent'),
+        { class: 'page narrow' },
+        h('h1', {}, 'The Draft'),
+        h(
+          'p',
+          { class: 'lede' },
+          'Both sides start with the same purse and take turns buying one piece at a time. Passing locks your army; gold you keep can buy pieces during the battle. Black picks first, because White moves first.',
+        ),
         h(
           'div',
-          { class: 'chips' },
-          chip('AI', opts.opponent === 'ai', 'free-opponent-ai', () => ((opts.opponent = 'ai'), paintOptions())),
-          chip('Friend on this device', opts.opponent === 'hotseat', 'free-opponent-hotseat', () => ((opts.opponent = 'hotseat'), paintOptions())),
+          { class: 'form' },
+          h('div', { class: 'field' }, h('span', { class: 'label' }, 'Budget'), h('div', { class: 'choices' }, FREE_MODE.budgets.map((b) => choice(`${b} gold`, opts.budget === b, `free-budget-${b}`, () => ((opts.budget = b), paintOptions()))))),
+          h(
+            'div',
+            { class: 'field' },
+            h('span', { class: 'label' }, 'Opponent'),
+            h(
+              'div',
+              { class: 'choices' },
+              choice('The computer', opts.opponent === 'ai', 'free-opponent-ai', () => ((opts.opponent = 'ai'), paintOptions())),
+              choice('A friend on this device', opts.opponent === 'hotseat', 'free-opponent-hotseat', () => ((opts.opponent = 'hotseat'), paintOptions())),
+            ),
+          ),
+          opts.opponent === 'ai'
+            ? h(
+                'div',
+                { class: 'field' },
+                h('span', { class: 'label' }, 'Computer'),
+                h('div', { class: 'choices' }, Object.entries(AI_PRESETS).map(([k, p]) => choice(p.label, opts.aiPreset === k, `free-preset-${k}`, () => ((opts.aiPreset = k), paintOptions())))),
+              )
+            : null,
         ),
-        opts.opponent === 'ai'
-          ? [
-              h('h3', {}, 'AI difficulty'),
-              h('div', { class: 'chips' }, Object.entries(AI_PRESETS).map(([k, p]) => chip(p.label, opts.aiPreset === k, `free-preset-${k}`, () => ((opts.aiPreset = k), paintOptions())))),
-            ]
-          : null,
-        h('button', { class: 'btn primary big', type: 'button', dataset: { testid: 'free-start' }, onclick: begin }, 'Begin draft'),
+        h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', dataset: { testid: 'free-start' }, onclick: begin }, 'Begin the draft')),
       ),
     );
   }
@@ -62,6 +75,7 @@ export function mount(root, ctx) {
       aiPreset: opts.opponent === 'ai' ? opts.aiPreset : null,
       budget: opts.budget,
       playerSide: opts.opponent === 'ai' ? 'w' : null,
+      rules: ctx.settings.rules(),
     });
     state = createDraft({ budget: opts.budget });
     state.log.forEach((e) => ctx.recorder.draftStep(e));
@@ -92,62 +106,64 @@ export function mount(root, ctx) {
     const army = state.armies[side];
     const left = state.budget - state.spent[side];
     const active = state.turn === side;
-    const who = opts.opponent === 'ai' ? (side === 'w' ? 'You · White' : `AI · Black (${AI_PRESETS[opts.aiPreset].label})`) : SIDE[side];
+    const who = opts.opponent === 'ai' ? (side === 'w' ? 'You, White' : `Computer, Black (${AI_PRESETS[opts.aiPreset].label})`) : SIDE[side];
     return h(
       'div',
-      { class: `panel draft-col ${side === 'w' ? 'ally' : 'enemy'}${active ? ' active' : ''}${state.passed[side] ? ' locked' : ''}` },
-      h('div', { class: 'draft-col-head' }, h('b', {}, who), h('span', { class: 'purse-value' }, h('i', { class: 'coin sm' }), h('b', { class: 'num' }, left))),
+      { class: `draft-col ${side === 'w' ? 'ally' : 'enemy'}${active ? ' active' : ''}${state.passed[side] ? ' locked' : ''}` },
+      h('div', { class: 'section-head' }, h('span', {}, who), h('span', { class: 'num gold' }, `${left} g`)),
       h('div', { class: 'draft-army' }, pieceImg(side, 'k'), PIECE_TYPES.flatMap((t) => Array.from({ length: army[t] }, () => pieceImg(side, t, 'pop-in')))),
-      h('p', { class: 'dim' }, state.passed[side] ? `Locked · ${armyLabel(army)}` : armyLabel(army)),
+      h('p', { class: 'fine' }, state.passed[side] ? `Locked: ${armyLabel(army)}` : armyLabel(army)),
     );
   }
 
   function paintDraft() {
     const side = state.turn;
     const human = side && isHuman(side);
-    const turnText = state.done ? 'Draft complete' : human ? (opts.opponent === 'ai' ? 'Your pick' : `${SIDE[side]}’s pick`) : 'The AI is choosing…';
+    const turnText = state.done ? 'The draft is over' : human ? (opts.opponent === 'ai' ? 'Your pick' : `${SIDE[side]} to pick`) : 'The computer is choosing…';
     const buttons = human
       ? PIECE_TYPES.map((t) => {
           const check = canBuy(state.armies[side], t, state.budget, { prices: state.prices, caps: state.caps });
           return h(
             'button',
             {
-              class: 'pick-btn',
+              class: 'pick',
               type: 'button',
               disabled: !check.ok,
-              title: check.ok ? '' : check.reason === 'cap' ? 'Maximum owned' : 'Not enough gold',
+              title: check.ok ? '' : check.reason === 'cap' ? 'You own the maximum' : 'Not enough gold',
               dataset: { testid: `draft-buy-${t}` },
               onclick: () => apply(draftBuy(state, t), t),
             },
             pieceImg(side, t),
             h('span', {}, PIECE_NAMES[t]),
-            h('span', { class: 'shop-meta' }, h('i', { class: 'coin sm' }), h('span', { class: 'num' }, PRICES[t])),
+            h('span', { class: 'num' }, `${PRICES[t]} g`),
           );
         })
       : [];
-    fill(el, 
+    fill(
+      el,
       h(
         'div',
         { class: 'draft-board' },
         column('b'),
         h(
           'div',
-          { class: 'panel draft-center' },
-          h('p', { class: 'eyebrow' }, `Budget ${state.budget} · ${opts.opponent === 'ai' ? 'vs AI' : 'hotseat'}`),
-          h('h2', { class: `turn-banner ${state.done ? 'done' : side === 'w' ? 'ally' : 'enemy'}` }, turnText),
+          { class: 'draft-center' },
+          h('p', { class: 'kicker' }, `${state.budget} gold each · ${opts.opponent === 'ai' ? 'against the computer' : 'two players'}`),
+          h('h2', { class: `turn ${state.done ? '' : side === 'w' ? 'ally' : 'enemy'}` }, turnText),
           state.done
-            ? h('button', { class: 'btn primary big', type: 'button', dataset: { testid: 'draft-deploy' }, onclick: deploy }, 'Deploy armies →')
+            ? h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', dataset: { testid: 'draft-deploy' }, onclick: deploy }, 'Deploy the armies'))
             : [
                 h('div', { class: 'pick-grid' }, buttons),
-                human ? h('button', { class: 'btn ghost', type: 'button', dataset: { testid: 'draft-pass' }, onclick: () => apply(draftPass(state), 'pass') }, 'Pass — lock my army') : null,
+                human ? h('div', { class: 'actions' }, h('button', { class: 'btn quiet', type: 'button', dataset: { testid: 'draft-pass' }, onclick: () => apply(draftPass(state), 'pass') }, 'Pass and lock my army')) : null,
               ],
+          h('div', { class: 'section-head sub' }, h('span', {}, 'Picks so far')),
           h(
             'ol',
-            { class: 'draft-log' },
+            { class: 'draft-log', reversed: true },
             state.log
               .slice()
               .reverse()
-              .map((e) => h('li', { class: e.side === 'w' ? 'ally' : 'enemy' }, `${SIDE[e.side]} ${e.action === 'buy' ? `buys a ${PIECE_NAMES[e.type].toLowerCase()}` : e.auto ? 'is out of options' : 'passes'}`)),
+              .map((e) => h('li', { class: e.side === 'w' ? 'ally' : 'enemy' }, `${SIDE[e.side]} ${e.action === 'buy' ? `buys a ${PIECE_NAMES[e.type].toLowerCase()}` : e.auto ? 'has nothing left to buy' : 'passes'}`)),
           ),
         ),
         column('w'),

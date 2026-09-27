@@ -7,6 +7,7 @@ import { createLogger } from './lib/log.js';
 import { createAIClient } from './ai/client.js';
 import { createStore } from './telemetry/store.js';
 import { createRecorder } from './telemetry/session.js';
+import { createSettings } from './settings.js';
 import { createSound } from './ui/sound.js';
 import * as menu from './ui/screens/menu.js';
 import * as setup from './ui/screens/setup.js';
@@ -14,9 +15,11 @@ import * as battle from './ui/screens/battle.js';
 import * as draft from './ui/screens/draft.js';
 import * as dashboard from './ui/screens/dashboard.js';
 import * as howto from './ui/screens/howto.js';
+import * as demo from './ui/screens/demo.js';
+import * as settingsScreen from './ui/screens/settings.js';
 
 const log = createLogger('app');
-const SCREENS = { menu, setup, battle, draft, dashboard, howto };
+const SCREENS = { menu, setup, battle, draft, dashboard, howto, demo, settings: settingsScreen };
 
 const root = document.getElementById('screen');
 const toastEl = document.getElementById('toast');
@@ -24,11 +27,13 @@ let unmount = null;
 let toastTimer = null;
 
 const store = createStore();
+const settings = createSettings();
 const ctx = {
   store,
+  settings,
   recorder: createRecorder({ store }),
   ai: createAIClient(),
-  sound: createSound(),
+  sound: createSound({ enabled: () => settings.get().sound }),
   log,
   go,
   toast(message, kind = 'info') {
@@ -56,17 +61,18 @@ function go(name, params = {}) {
   root.focus({ preventScroll: true });
 }
 
-// ---- header controls
+// ---- settings that are pure presentation: body classes read by the CSS
 const soundBtn = document.querySelector('[data-testid="sound-toggle"]');
-const paintSound = () => {
-  soundBtn.textContent = ctx.sound.muted ? '🔇' : '🔊';
-  soundBtn.setAttribute('aria-pressed', String(!ctx.sound.muted));
-};
-soundBtn.addEventListener('click', () => {
-  ctx.sound.toggle();
-  paintSound();
-});
-paintSound();
+function applySettings(v) {
+  document.body.classList.toggle('no-coords', !v.showCoords);
+  document.body.classList.toggle('no-anim', !v.animations);
+  soundBtn.textContent = v.sound ? 'Sound on' : 'Sound off';
+  soundBtn.setAttribute('aria-pressed', String(v.sound));
+}
+settings.onChange(applySettings);
+applySettings(settings.get());
+soundBtn.addEventListener('click', () => settings.set({ sound: !settings.get().sound }));
+document.querySelector('[data-testid="nav-settings"]').addEventListener('click', () => go('settings'));
 
 const fsBtn = document.querySelector('[data-testid="fullscreen-toggle"]');
 if (!document.fullscreenEnabled) fsBtn.hidden = true;

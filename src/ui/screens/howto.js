@@ -8,8 +8,8 @@ export function mount(root, ctx) {
   root.append(
     h(
       'section',
-      { class: 'howto panel' },
-      h('h2', {}, 'How to play'),
+      { class: 'page narrow howto' },
+      h('h1', {}, 'How to play'),
       h(
         'ol',
         { class: 'steps' },

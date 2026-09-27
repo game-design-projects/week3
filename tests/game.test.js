@@ -48,7 +48,7 @@ test('Match: checkmate winner, stalemate, insufficient material', () => {
   st.move('c6b6');
   assert.deepEqual([st.status().reason, st.status().winner], ['stalemate', null]);
 
-  const ins = new Match({ startFen: '4k3/8/8/8/8/8/3q4/4K3 w - - 0 1' });
+  const ins = new Match({ startFen: '4k3/8/8/8/8/8/3q4/4K3 w - - 0 1', rules: { bounty: null } });
   ins.move('e1d2');
   assert.equal(ins.status().reason, 'insufficient');
 });
