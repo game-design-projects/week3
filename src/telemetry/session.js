@@ -54,7 +54,7 @@ export function createRecorder({ store, now = () => Date.now() }) {
       return current ? JSON.parse(JSON.stringify(current)) : null;
     },
 
-    begin({ mode, levelId = null, opponent = 'ai', aiPreset = null, budget, playerSide = 'w', reusedArmy = false, rules = null }) {
+    begin({ mode, levelId = null, opponent = 'ai', aiPreset = null, budget, playerSide = 'w', reusedArmy = false, rules = null, feel = null }) {
       if (current) this.abandon();
       t0 = now();
       const previous = store
@@ -75,6 +75,7 @@ export function createRecorder({ store, now = () => Date.now() }) {
         attempt: previous + 1,
         reusedArmy,
         rules, // e.g. { captureBounty: true } — the house rules in force
+        feel, // e.g. { effects: 'full', effective: 'full', sound: true } — game-feel level (Lecture 2 A/B)
         startedAt: iso(t0),
         battleStartedAt: null,
         endedAt: null,

@@ -5,13 +5,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-26
+
 ### Added
+- **Game feel pass (Lecture 2).** The effects are made of the book's own materials (ink, stamps, coins, paper), and each one reports game state:
+  - Piece moves have anticipation (lift and pull-back), eased travel scaled by distance, overshoot and settle, and a landing squash. A dragged piece just thuds where you drop it.
+  - On a capture, the taken piece stays until it is hit and is then knocked off its square. Ink spatter appears in the attacker's colour, the board shakes in proportion to the piece's price, and rook and queen captures get a 70 ms hit-stop.
+  - Bounty gold flies from the capture square into the capturer's purse as coins, and the counter ticks up coin by coin. A purchase pays out of the purse coin by coin, and the piece is stamped down with an ink ring and a printer's registration mark.
+  - Check stamps "Check" beside the threatened king, and the checked square pulses. Mate freezes for 240 ms, then a big stamp lands (Checkmate / Stalemate / Resigns / Draw), the losing king wobbles and topples, and a win brings paper-chip confetti. The result verdict is stamped in.
+  - Dragging a card or piece lifts it with a hard print shadow and tilts it with the pointer's speed. The landing square is previewed, and a rejected drop flashes the square red, shudders, buzzes and snaps back.
+  - Drop forgiveness: a card released just off the board edge snaps to the nearest legal square within 0.6 of a square.
+  - The AI's thinking shows as a quill line drawn under the status and a dashed purse. The demo's eval bar leaves a hatched trail of the last swing.
+  - Micro-interactions: a printer's fist (☞) on the contents page, cards that lift and tilt, buttons that press into the page, legal-move dots that pop in, and dialogs laid down like a page.
+- Synthesized sounds rebuilt as pure, tested recipes: a wooden thock, a capture thud that deepens with the piece's value, a purchase stamp, coins that climb in pitch as they are counted, a mate thud, and a two-tone buzz for errors.
+- **Settings → Effects: Full / Subtle / Off.** Animations off and the OS "reduce motion" preference also force Off. Sessions record `feel: { effects, effective, sound }` so playtests can compare feel levels.
+- `FEEL` block in `src/config.js` holding every effect timing and intensity. `src/ui/feel.js` holds the pure effect shapes (unit-tested) and `src/ui/fx.js` the DOM effect layer.
+- Tests: effect shapes and scaling (`tests/feel.test.js`), sound recipes (`tests/sound.test.js`), the effects setting and the recorded `feel`. E2E: effects appear on drops, captures and mate and in the demo; none appear with Effects Off or Animations off; drop forgiveness.
 - **Anonymous playtest telemetry collector:** a Cloudflare Worker + D1 database (`server/telemetry/`, deployed as `chass-telemetry`) that accepts finished sessions at `POST /v1/sessions` and serves them back to the designer at `GET /v1/sessions` (bearer-token protected). It stores no IP address, User-Agent or geo data by design. `pnpm telemetry:pull` (`tools/pull-telemetry.mjs`) downloads sessions into an Import-ready JSON file.
 - **Explicit opt-in consent for telemetry.** A book-style card appears over the menu on first launch asking to share anonymous playtest data or keep it on-device (`src/ui/consent.js`); nothing is sent before a choice is made. The decision (`settings.telemetryConsent`: `unset`/`granted`/`denied`) can be changed any time from a new **Privacy** section in Settings, and the Playtest data screen states whether sharing is currently on.
 - `src/telemetry/store.js`'s `createStore` takes a `canSend()` gate; remote sends are skipped (and logged) unless it returns true. `TELEMETRY.endpoint` in `src/config.js` now points at the deployed collector.
 - Unit tests for the worker handler (`tests/telemetry-worker.test.js`, fake D1) and for consent gating in the store/settings; e2e coverage for the consent card, accepted/declined telemetry delivery (intercepted, never hitting production), and the Settings Privacy switch.
 
 ### Changed
+- The purse display lags the true total while coins are in flight (under a second) and always ends on it; the game state itself is never delayed. With effects on, the result dialog appears about 1.5 s after mate (0.65 s when off) so the stamp can land.
+- The board's `onDrop` can reject a drop, and the piece then flies back. `render()` returns when the moved piece lands. `land()` was replaced by drop animations passed to `render()`.
 - `e2e/smoke.test.mjs`'s `open()` helper now dismisses the first-run consent card (declining by default) before driving the rest of the game.
 
 ## [0.4.1] - 2026-09-26

@@ -5,14 +5,21 @@
 // The shop is the game: each side starts with its king and a purse, and on its
 // turn either moves or buys one piece and drops it into its back two ranks.
 // Captures pay a bounty (house rule, on by default).
+//
+// Game feel (Lecture 2) is layered on top without touching the rules: the Match
+// state changes first, synchronously, and the effects (fx.js / board.js) only
+// *show* it: coins counted between board and purse, ink, stamps, shake. The
+// purse display lags the true total by `pendingGold` until the last coin lands.
 
-import { AI_MIN_THINK_MS, AI_PRESETS, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
+import { AI_MIN_THINK_MS, AI_PRESETS, FEEL, LEVELS, MATE_VALUE, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
 import { armyLabel } from '../../core/army.js';
 import { Match } from '../../core/game.js';
 import { buildFen } from '../../core/placement.js';
 import { randomSeed } from '../../lib/rng.js';
 import { createBoard, piecesFromBoard } from '../board.js';
 import { downloadText, fill, formatDuration, h, pieceImg } from '../dom.js';
+import { coinPlan, hitStopMs, pieceValue } from '../feel.js';
+import { createFx, currentFeel, liftGhost, moveGhost, returnGhost } from '../fx.js';
 
 const REASON_TEXT = {
   checkmate: 'Checkmate',
@@ -23,6 +30,9 @@ const REASON_TEXT = {
   resign: 'Resignation',
 };
 const SIDE = { w: 'White', b: 'Black' };
+const STAMP_TEXT = { checkmate: 'Checkmate', stalemate: 'Stalemate', resign: 'Resigns' };
+const other = (side) => (side === 'w' ? 'b' : 'w');
+const inkOf = (side) => (side === 'w' ? 'ally' : 'enemy'); // White is always the blue side at the bottom
 const NO_RECORD = { begin() {}, startBattle() {}, ply() {}, drop() {}, end() {}, abandon() {} };
 
 export function mount(root, ctx, params) {
@@ -35,6 +45,7 @@ export function mount(root, ctx, params) {
   const settings = ctx.settings.get();
   const rules = params.rules ?? ctx.settings.rules();
   const rec = demo ? NO_RECORD : ctx.recorder;
+  const feel = () => currentFeel(ctx.settings);
 
   rec.begin({
     mode: params.mode,
@@ -45,6 +56,8 @@ export function mount(root, ctx, params) {
     playerSide: params.playerSide,
     reusedArmy: !!params.rematch,
     rules,
+    // The feel level this session was played at, so playtests can compare Full / Subtle / Off.
+    feel: { effects: settings.effects, effective: feel(), sound: settings.sound },
   });
   const startFen = buildFen(params.white.placement, params.black.placement);
   const match = new Match({
@@ -65,26 +78,24 @@ export function mount(root, ctx, params) {
   let promo = null; // { from, to }
   let dropType = null; // shop piece being placed
   let evalWhite = 0; // last AI evaluation, centipawns from White's view (demo)
+  let evalShown = 50; // eval bar fill (% White) currently displayed
   const notes = []; // demo commentary, newest first
+  // Gold still "in flight" as coins: the purse shows reserve − pending until the coins land.
+  const pendingGold = { w: 0, b: 0 };
 
   // ---------------------------------------------------------------- layout
   const left = h('aside', { class: 'side-col' });
   const boardWrap = h('div', { class: 'board-wrap' });
   const promoEl = h('div', { class: 'overlay', hidden: true });
-  const evalBar = demo ? h('div', { class: 'eval-bar', 'aria-hidden': 'true' }, h('div', { class: 'eval-fill' })) : null;
+  const evalBar = demo ? h('div', { class: 'eval-bar', 'aria-hidden': 'true' }, h('div', { class: 'eval-ghost' }), h('div', { class: 'eval-fill' })) : null;
   const right = h('aside', { class: 'side-col log-col' });
   const modal = h('div', { class: 'modal-backdrop', hidden: true });
   // The economy frames the board: Black's war chest above, White's below.
   const topBank = h('div', { class: 'bank top', dataset: { testid: 'bank-b' } });
   const bottomBank = h('div', { class: 'bank bottom', dataset: { testid: 'bank-w' } });
+  const boardCol = h('div', { class: 'board-col' }, topBank, boardWrap, bottomBank, promoEl);
   root.append(
-    h(
-      'section',
-      { class: `stage battle${demo ? ' demo' : ''}` },
-      left,
-      h('div', { class: 'center' }, evalBar, h('div', { class: 'board-col' }, topBank, boardWrap, bottomBank, promoEl)),
-      right,
-    ),
+    h('section', { class: `stage battle${demo ? ' demo' : ''}` }, left, h('div', { class: 'center' }, evalBar, boardCol), right),
     modal,
   );
   const plyMeta = []; // per ply: { earned, cost } — shown in the move list
@@ -92,11 +103,24 @@ export function mount(root, ctx, params) {
 
   const board = createBoard(boardWrap, {
     orientation: 'w',
+    feel,
     canDrag: (sq) => canAct() && match.chess.get(sq)?.color === match.turn(),
     onDragStart: (sq) => select(sq),
     onSquareClick: clickSquare,
-    onDrop: (from, to) => attempt(from, to),
+    onDrop: (from, to) => attempt(from, to, { dragged: true }),
   });
+  const fx = createFx(boardCol, { level: feel });
+  const bankOf = (side) => (side === 'w' ? bottomBank : topBank);
+  const goldEl = (side) => bankOf(side).querySelector('.bank-gold');
+
+  /** Re-print one purse's number in place (coins land between full repaints). */
+  function showGold(side) {
+    const el = goldEl(side);
+    const v = el?.querySelector('.gv');
+    if (!v) return;
+    v.textContent = `${match.reserve[side] - pendingGold[side]}`;
+    fx.bump(el);
+  }
 
   const canAct = () => !ended && !thinking && !promo && human[match.turn()];
 
@@ -125,19 +149,26 @@ export function mount(root, ctx, params) {
     paintPanels();
   }
 
-  function attempt(from, to) {
-    if (!canAct()) return;
+  /** @returns {boolean} whether the move was accepted (a rejected drag snaps back) */
+  function attempt(from, to, { dragged = false } = {}) {
+    if (!canAct()) return false;
     if (!match.legalMovesFrom(from).some((m) => m.to === to)) {
-      if (from !== to) ctx.sound.play('illegal');
+      if (from !== to) {
+        ctx.sound.play('illegal');
+        board.buzz(to);
+      }
       selected = null;
       targets = [];
-      return paintBoard();
+      paintBoard();
+      return false;
     }
     if (match.needsPromotion(from, to)) {
       promo = { from, to };
-      return paintPromo();
+      paintPromo();
+      return true;
     }
-    play({ from, to });
+    play({ from, to }, { dragged });
+    return true;
   }
 
   function chooseShopPiece(type) {
@@ -155,7 +186,8 @@ export function mount(root, ctx, params) {
   }
 
   // ---------------------------------------------------------------- turns
-  function buyAndDrop(type, square) {
+  function buyAndDrop(type, square, { dragged = false } = {}) {
+    const lvl = feel();
     const r = match.drop(type, square);
     dropType = null;
     selected = null;
@@ -163,31 +195,88 @@ export function mount(root, ctx, params) {
     plyMeta.push({ cost: r.cost });
     bought[r.color].push({ type, square, cost: r.cost });
     rec.drop({ side: r.color, type, square, cost: r.cost, san: r.san, materialDiff: match.material().diff });
-    ctx.sound.play(r.check ? 'check' : 'buy');
     if (!human[r.color] && !demo) ctx.toast(`The enemy bought a ${PIECE_NAMES[type].toLowerCase()} for ${r.cost} g and dropped it on ${square}.`);
-    afterTurn(null);
-    board.land(square);
-    board.flash(square, `−${r.cost} g`, 'spend');
+    // The price is counted out of the purse, coin by coin, onto the square.
+    const plan = coinPlan(r.cost, lvl);
+    if (plan.length) pendingGold[r.color] -= r.cost;
+    const kingSq = r.check ? match.kingSquare(match.turn()) : null;
+    afterTurn({ drop: square, dragged, onImpact: () => dropImpact(r, kingSq) });
+    fx.coins(() => goldEl(r.color), board.squareEl(square), plan, {
+      tick: 'leave',
+      onCoin: (c) => {
+        pendingGold[r.color] += c.value;
+        showGold(r.color);
+        ctx.sound.play('coin', { index: plan.length - 1 - c.index }); // counting down
+      },
+    });
     return r;
   }
 
-  function play(move) {
+  /** The bought piece hits the board: stamp thud, ink ring with a printer's mark, the price. */
+  function dropImpact(r, kingSq) {
+    if (!alive) return;
+    if (!r.mate) ctx.sound.play(r.check ? 'check' : 'buy');
+    fx.ink(board.squareEl(r.square), inkOf(r.color), { reg: true, big: true });
+    board.flash(r.square, `−${r.cost} g`, 'spend');
+    if (kingSq && !r.mate) checkStamp(r.color, kingSq);
+  }
+
+  function play(move, { dragged = false } = {}) {
+    const lvl = feel();
     const r = match.move(move);
     selected = null;
     targets = [];
     plyMeta.push({ earned: r.earned });
     rec.ply({ san: r.san, materialDiff: match.material().diff });
-    ctx.sound.play(r.check ? 'check' : r.captured ? 'capture' : 'move');
-    afterTurn({ from: r.from, to: r.to });
-    if (r.earned) board.flash(r.to, `+${r.earned} g`, 'gain');
+    const value = r.captured ? pieceValue(r.captured) : 0;
+    // The bounty is counted into the purse when the coins land, not before.
+    const plan = r.earned ? coinPlan(r.earned, lvl) : [];
+    if (plan.length) pendingGold[r.color] += r.earned;
+    const kingSq = r.check ? match.kingSquare(match.turn()) : null;
+    afterTurn({
+      from: r.from,
+      to: r.to,
+      dragged,
+      captured: r.captured ? { color: other(r.color), type: r.captured } : null,
+      hitStop: hitStopMs(value, r.mate, lvl),
+      onImpact: () => moveImpact(r, value, plan, kingSq),
+    });
     return r;
   }
 
+  /** The moved piece lands: thock / capture thud, shake by value, ink, coins to the purse, check stamp. */
+  function moveImpact(r, value, plan, kingSq) {
+    if (!alive) return;
+    if (!r.mate) ctx.sound.play(r.check ? 'check' : r.captured ? 'capture' : 'move', { value });
+    if (r.captured) {
+      fx.shake(value);
+      fx.ink(board.squareEl(r.to), inkOf(r.color), { big: value >= FEEL.hitStop.minValue });
+    }
+    if (r.earned) {
+      board.flash(r.to, `+${r.earned} g`, 'gain');
+      fx.coins(board.squareEl(r.to), () => goldEl(r.color), plan, {
+        tick: 'land',
+        onCoin: (c) => {
+          pendingGold[r.color] -= c.value;
+          showGold(r.color);
+          ctx.sound.play('coin', { index: c.index });
+        },
+      });
+    }
+    if (kingSq && !r.mate) checkStamp(r.color, kingSq);
+  }
+
+  /** "Check" stamped next to the threatened king, in the attacker's ink (full effects only). */
+  function checkStamp(attacker, kingSq) {
+    if (feel() !== 'full') return;
+    fx.stamp('Check', { at: board.squareEl(kingSq), kind: inkOf(attacker), size: 'small', ttl: 900 });
+  }
+
   function afterTurn(animate) {
-    paintBoard(animate);
+    const impactMs = paintBoard(animate);
     paintPanels();
     const status = match.status();
-    if (status.over) return finish(status);
+    if (status.over) return finish(status, impactMs);
     if (!human[match.turn()]) aiTurn();
   }
 
@@ -249,15 +338,33 @@ export function mount(root, ctx, params) {
     finish(match.status());
   }
 
-  function finish(status) {
+  /** @param {number} impactMs when the final move lands (the finale waits for it) */
+  function finish(status, impactMs = 0) {
     ended = true;
     thinking = false;
     rec.end({ winner: status.winner, reason: status.reason, pgn: match.pgn(), finalFen: match.fen() });
-    if (!demo) ctx.sound.play(status.winner === null ? 'lose' : hotseat || status.winner === 'w' ? 'win' : 'lose');
     paintBoard();
     paintPanels();
+    const lvl = feel();
+    const at = lvl === 'off' ? 0 : impactMs;
+    fx.later(at, () => finale(status));
     if (demo) return demoNext(status);
-    setTimeout(() => alive && showResult(status), 650);
+    setTimeout(() => alive && showResult(status), at + (lvl === 'off' ? 650 : FEEL.finale.resultDelayMs));
+  }
+
+  /** End of game: mate thud, the loser's king tips over, a big stamp, the page shakes; paper confetti for a win. */
+  function finale(status) {
+    const lvl = feel();
+    const mate = status.reason === 'checkmate';
+    const decisive = status.winner !== null;
+    const youWon = decisive && (demo || hotseat || status.winner === 'w');
+    if (mate) ctx.sound.play('mate');
+    if (!demo) setTimeout(() => alive && ctx.sound.play(youWon ? 'win' : 'lose'), mate && lvl !== 'off' ? 320 : 0);
+    if (lvl === 'off') return;
+    if (decisive && (mate || status.reason === 'resign')) fx.topple(board.squareEl(match.kingSquare(other(status.winner)))?.querySelector('.piece'));
+    fx.stamp(STAMP_TEXT[status.reason] ?? 'Draw', { at: boardWrap, kind: decisive ? inkOf(status.winner) : 'ink', size: 'big' });
+    if (mate) fx.shake(MATE_VALUE);
+    if (youWon) fx.later(FEEL.finale.stampMs * 0.5, () => fx.confetti());
   }
 
   function demoNext(status) {
@@ -273,8 +380,10 @@ export function mount(root, ctx, params) {
   }
 
   // ---------------------------------------------------------------- render
+  /** @returns {number} ms until an animated piece lands (0 if none) */
   function paintBoard(animate) {
-    board.render(piecesFromBoard(match.board()), animate && settings.animations ? animate : undefined);
+    // The animation always goes to the board: at feel 'off' it just fires onImpact at once.
+    const impactMs = board.render(piecesFromBoard(match.board()), animate);
     board.el.classList.toggle('drop-mode', !!dropType);
     const st = match.status();
     board.highlight({
@@ -286,9 +395,20 @@ export function mount(root, ctx, params) {
     });
     if (evalBar) {
       const cp = Math.max(-1000, Math.min(1000, evalWhite)); // ±10 pawns (or mate) fills the bar
-      evalBar.firstChild.style.height = `${50 + cp / 20}%`;
+      const pct = 50 + cp / 20;
+      // A hatched "ghost" marks how far the evaluation just swung, then catches up (a damage-bar trail).
+      const [ghost, fillEl] = evalBar.children;
+      const up = pct > evalShown;
+      const slow = feel() === 'off' ? 'none' : 'height 700ms ease 350ms';
+      const fast = feel() === 'off' ? 'none' : 'height 160ms ease-out';
+      fillEl.style.transition = up ? slow : fast;
+      ghost.style.transition = up ? fast : slow;
+      fillEl.style.height = `${pct}%`;
+      ghost.style.height = `${pct}%`;
+      evalShown = pct;
       evalBar.title = `Evaluation ${(evalWhite / 100).toFixed(1)} for White`;
     }
+    return impactMs;
   }
 
   function paintPromo() {
@@ -358,26 +478,44 @@ export function mount(root, ctx, params) {
   function cardPointerDown(e, type) {
     if (!canAct() || e.button > 0) return;
     const start = { x: e.clientX, y: e.clientY };
+    const home = e.currentTarget.getBoundingClientRect();
+    const lvl = feel();
+    const tilt = { x: e.clientX, tilt: 0 };
     let ghost = null;
+    // Where would it land? A legal square under the pointer, or (just off the board edge) the nearest one.
+    const landing = (x, y) => {
+      const sq = board.squareAt(x, y);
+      if (sq) return targets.some((t) => t.square === sq) ? sq : null;
+      return board.nearestSquare(x, y, targets.map((t) => t.square));
+    };
     const move = (ev) => {
       if (!ghost && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
       if (!ghost) {
         if (dropType !== type) chooseShopPiece(type);
         const size = boardWrap.getBoundingClientRect().width / 8;
         ghost = h('img', { class: 'drag-ghost', src: `assets/pieces/${match.turn()}${type.toUpperCase()}.svg`, alt: '', style: { width: `${size}px`, height: `${size}px` } });
+        liftGhost(ghost, lvl);
         document.body.append(ghost);
       }
-      ghost.style.transform = `translate(${ev.clientX}px, ${ev.clientY}px) translate(-50%, -50%)`;
+      moveGhost(ghost, ev.clientX, ev.clientY, tilt, lvl);
+      board.hover(landing(ev.clientX, ev.clientY));
     };
     const up = (ev) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       if (!ghost) return chooseShopPiece(type); // plain click
-      ghost.remove();
-      const sq = board.squareAt(ev.clientX, ev.clientY);
-      if (sq && targets.some((t) => t.square === sq)) buyAndDrop(type, sq);
-      else {
-        if (sq) ctx.sound.play('illegal');
+      board.hover(null);
+      const sq = landing(ev.clientX, ev.clientY);
+      if (sq) {
+        ghost.remove();
+        buyAndDrop(type, sq, { dragged: true });
+      } else {
+        const onBoard = board.squareAt(ev.clientX, ev.clientY);
+        if (onBoard) {
+          ctx.sound.play('illegal');
+          board.buzz(onBoard);
+        }
+        returnGhost(ghost, home, lvl); // it goes back in the chest
         dropType = null;
         targets = [];
         paintBoard();
@@ -399,7 +537,7 @@ export function mount(root, ctx, params) {
       'div',
       { class: 'bank-head' },
       h('span', { class: 'bank-who' }, who),
-      h('span', { class: `bank-gold num${myTurn && gold > 0 ? ' ready' : ''}` }, h('i', { class: 'coin' }), `${gold}`, h('small', {}, ' g')),
+      h('span', { class: `bank-gold num${myTurn && gold > 0 ? ' ready' : ''}` }, h('i', { class: 'coin' }), h('span', { class: 'gv' }, `${gold - pendingGold[side]}`), h('small', {}, ' g')),
       h('span', { class: 'bank-log' }, earned ? `+${earned} g from captures` : rules.captureBounty ? 'captures pay gold' : '', bought[side].length ? ` · bought ${bought[side].map((b) => `${b.type.toUpperCase()}@${b.square}`).join(' ')}` : ''),
     );
     // Cards only for a human side — and in hotseat only for the side to move.
@@ -473,6 +611,8 @@ export function mount(root, ctx, params) {
     fill(bottomBank, bank('w'));
     topBank.classList.toggle('turn', !ended && match.turn() === 'b');
     bottomBank.classList.toggle('turn', !ended && match.turn() === 'w');
+    topBank.classList.toggle('thinking', thinking && match.turn() === 'b');
+    bottomBank.classList.toggle('thinking', thinking && match.turn() === 'w');
     bottomBank.classList.toggle('shopping', !!dropType);
 
     const sans = match.history();
@@ -584,6 +724,7 @@ export function mount(root, ctx, params) {
     alive = false;
     if (!ended) rec.abandon();
     if (window.__cbs.match === match) window.__cbs.match = null;
+    fx.destroy();
     board.destroy();
   };
 }

@@ -75,6 +75,17 @@ test('recorder: hotseat result is from White’s view; free mode keeps the draft
   assert.deepEqual(s.draft, [{ side: 'b', action: 'buy', type: 'q' }]);
 });
 
+test('recorder: records the game-feel level the session was played at (null when not given)', () => {
+  const { store, rec } = setup();
+  rec.begin({ mode: 'level', levelId: 'L1', budget: 12, feel: { effects: 'subtle', effective: 'off', sound: true } });
+  rec.end({ winner: 'w', reason: 'checkmate', pgn: '', finalFen: 'f' });
+  rec.begin({ mode: 'level', levelId: 'L1', budget: 12 });
+  rec.abandon();
+  const [a, b] = store.sessions();
+  assert.deepEqual(a.feel, { effects: 'subtle', effective: 'off', sound: true });
+  assert.equal(b.feel, null);
+});
+
 test('stats: summarize / byArmy / pieceStats / endReasons / learningCurve / filter', () => {
   const { store, rec, clock } = setup();
   playLevel(rec, clock, 'b', 'checkmate');

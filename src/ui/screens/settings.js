@@ -95,6 +95,26 @@ export function mount(root, ctx) {
       toggle('showHints', 'Show legal moves', 'Dots on the squares the selected piece can reach.'),
       toggle('showCoords', 'Board coordinates', 'Files a–h and ranks 1–8 along the edges.'),
       toggle('animations', 'Animations', 'Pieces slide when they move.'),
+      h(
+        'div',
+        { class: 'setting' },
+        h('div', {}, h('b', {}, 'Effects'), h('p', { class: 'fine' }, 'Game feel: coins counted into your purse, ink, stamps, a shake on big captures. Subtle keeps the information and drops the drama. Recorded with each session so playtests can compare.')),
+        h(
+          'div',
+          { class: 'choices' },
+          [
+            ['full', 'Full'],
+            ['subtle', 'Subtle'],
+            ['off', 'Off'],
+          ].map(([k, label]) =>
+            h(
+              'button',
+              { class: `choice${s.effects === k ? ' on' : ''}`, type: 'button', 'aria-pressed': String(s.effects === k), dataset: { testid: `setting-effects-${k}` }, onclick: () => (ctx.settings.set({ effects: k }), paint()) },
+              label,
+            ),
+          ),
+        ),
+      ),
       h('h2', { class: 'rule-head' }, 'House rules'),
       h('p', { class: 'fine' }, 'These change the game, so every recorded session notes which rules were on.'),
       toggle('captureBounty', 'Capture bounty', `Capturing an enemy piece earns gold: ${bounty}.`),
