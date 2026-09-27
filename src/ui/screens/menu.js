@@ -32,7 +32,14 @@ export function mount(root, ctx) {
         'div',
         { class: 'title-block' },
         h('h1', {}, 'Chess Battle', h('br'), 'Simulator'),
-        h('p', { class: 'lede' }, 'You get a purse of gold and a look at the enemy’s army. Spend the gold on pieces, set them up, and then play ordinary chess until one king is mated.'),
+        h('p', { class: 'lede' }, 'Chess where gold is a weapon. You buy your army instead of being handed one, and the shop stays open for the whole battle.'),
+        h(
+          'ol',
+          { class: 'loop' },
+          h('li', {}, h('b', {}, 'Recruit.'), ' Spend a purse of gold on pieces, knowing exactly what the enemy fields.'),
+          h('li', {}, h('b', {}, 'Deploy.'), ' Arrange them in your back two ranks.'),
+          h('li', {}, h('b', {}, 'Fight and buy.'), ' Every capture pays a bounty. On any turn you can spend gold to drop a new piece into your ranks instead of moving. The enemy can too.'),
+        ),
         h(
           'table',
           { class: 'tariff', 'aria-label': 'Prices' },

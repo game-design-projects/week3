@@ -190,6 +190,33 @@ export function createBoard(container, opts = {}) {
       build();
     },
     squareEl: (sq) => squareEls.get(sq),
+    /** Float a short label (e.g. '+2 g') up from a square. kind: 'gain' | 'spend'. */
+    flash(sq, text, kind = 'gain') {
+      const btn = squareEls.get(sq);
+      if (!btn) return;
+      const tag = h('span', { class: `flash ${kind}`, 'aria-hidden': 'true' }, text);
+      btn.append(tag);
+      setTimeout(() => tag.remove(), 1400);
+    },
+    /** Play the "just bought and dropped here" landing on a square's piece. */
+    land(sq) {
+      const img = squareEls.get(sq)?.querySelector('.piece');
+      if (!img || matchMedia('(prefers-reduced-motion: reduce)').matches || document.body.classList.contains('no-anim')) return;
+      img.animate(
+        [
+          { transform: 'translateY(-38%) scale(1.25)', opacity: 0 },
+          { transform: 'translateY(0) scale(0.94)', opacity: 1, offset: 0.7 },
+          { transform: 'translateY(0) scale(1)', opacity: 1 },
+        ],
+        { duration: 420, easing: 'cubic-bezier(0.3, 0.7, 0.2, 1)' },
+      );
+      squareEls.get(sq).animate([{ boxShadow: 'inset 0 0 0 6px var(--gold)' }, { boxShadow: 'inset 0 0 0 0 transparent' }], { duration: 900 });
+    },
+    /** Square under a viewport point, if it is on this board. */
+    squareAt(x, y) {
+      const el = document.elementFromPoint(x, y)?.closest?.('.sq');
+      return el && this.el.contains(el) ? el.dataset.square : null;
+    },
     destroy() {
       drag?.ghost?.remove();
       el.remove();

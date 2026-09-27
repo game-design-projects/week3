@@ -4,7 +4,7 @@
 
 **Recruit an army with a fixed purse of gold. Deploy it. Then play real chess until one king falls.**
 
-A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives you a budget and shows you the enemy's army; you buy pieces (Queen 9, Rook 5, Bishop 3, Knight 3, Pawn 1, King free), place them in your back two ranks, and then play standard chess against an AI until someone is checkmated. **The shop stays open during the battle.** Gold you didn't spend is kept, capturing enemy pieces earns bounty gold, and on any turn you can buy a piece and drop it into your deployment zone instead of moving. The AI shops too.
+A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives you a budget and shows you the enemy's army; you buy pieces (Queen 9, Rook 5, Bishop 3, Knight 3, Pawn 1, King free), place them in your back two ranks, and then play standard chess against an AI until someone is checkmated. **The shop stays open during the battle.** Your war chest sits right under the board, and you drag pieces from it straight onto your back ranks. Gold you didn't spend is kept, capturing enemy pieces earns bounty gold, and on any turn you can buy a piece and drop it into your deployment zone instead of moving. The AI shops too.
 
 - **Play online:** https://stevenli-phoenix-work.itch.io/chass
 - **Play locally:** `pnpm install && pnpm dev`, then open http://localhost:5173 (designed for a 1280×720 desktop window; also works on phones).

@@ -365,7 +365,7 @@ h3 {
   max-width: 1120px;
   min-height: 100%;
   margin: 0 auto;
-  padding: 40px 40px 24px;
+  padding: 28px 40px 20px;
   display: grid;
   grid-template-columns: 1fr 1.1fr;
   gap: 56px;
@@ -373,7 +373,7 @@ h3 {
 }
 
 .title-block h1 {
-  font-size: 4.2rem;
+  font-size: 3.6rem;
   font-weight: 700;
   line-height: 0.98;
   letter-spacing: -0.02em;
@@ -381,7 +381,7 @@ h3 {
 }
 
 .tariff {
-  margin-top: 22px;
+  margin-top: 14px;
   border-collapse: collapse;
   font-size: var(--fs-sm);
   min-width: 220px;
@@ -1739,4 +1739,230 @@ h3 {
 
 .setting .choices {
   flex-wrap: nowrap;
+}
+
+/* ------------------------------------------------------------ the economy around the board */
+.stage.battle {
+  /* leave room for the two war chests above and below the board */
+  --board: clamp(300px, min(calc(100vh - 46px - 36px - 164px), calc(100vw - 660px)), 640px);
+}
+
+.board-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: var(--board);
+}
+
+.bank {
+  border: 1.5px solid var(--hair-strong);
+  padding: 5px 10px;
+  transition: border-color var(--t);
+}
+
+.bank.turn {
+  border-color: var(--ink);
+}
+
+.bank.top.turn {
+  border-color: var(--enemy);
+}
+
+.bank.bottom.turn {
+  border-color: var(--ally);
+}
+
+.bank-head {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.bank-who {
+  font: 600 var(--fs-sm) var(--serif);
+}
+
+.bank.top .bank-who {
+  color: var(--enemy);
+}
+
+.bank.bottom .bank-who {
+  color: var(--ally);
+}
+
+.bank-gold {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--gold);
+  display: inline-flex;
+  align-items: center;
+}
+
+.bank-gold small {
+  font-size: 0.8rem;
+}
+
+.bank-gold.ready {
+  animation: nudge 1.8s ease-in-out infinite;
+}
+
+@keyframes nudge {
+  50% {
+    color: var(--enemy);
+  }
+}
+
+.coin {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  margin-right: 5px;
+  box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 6px var(--gold);
+}
+
+.bank-log {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(5, 52px) 1fr;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.card {
+  display: grid;
+  justify-items: center;
+  padding: 2px 0 1px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--sq-light);
+  cursor: grab;
+  touch-action: none;
+}
+
+.card img {
+  width: 38px;
+  height: 38px;
+  pointer-events: none;
+}
+
+.card-price {
+  font-size: var(--fs-xs);
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.card:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.card.on {
+  box-shadow: inset 0 0 0 2px var(--gold), 0 0 0 2px var(--gold);
+}
+
+.card:disabled {
+  background: transparent;
+  border-color: var(--hair);
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.card-hint {
+  margin: 0 0 0 6px;
+  font: italic 500 var(--fs-sm) var(--serif);
+  color: var(--ink-2);
+}
+
+.bank.shopping .card-hint {
+  color: var(--gold);
+}
+
+.flash {
+  position: absolute;
+  left: 50%;
+  top: -18%;
+  z-index: 3;
+  padding: 1px 6px;
+  background: var(--paper);
+  border: 1.5px solid currentColor;
+  font: 700 0.95rem var(--mono);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: float-up 1.4s ease-out forwards;
+}
+
+.flash.gain {
+  color: var(--gold);
+}
+
+.flash.spend {
+  color: var(--enemy);
+}
+
+@keyframes float-up {
+  from {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -120%);
+    opacity: 0;
+  }
+}
+
+.mv.buy {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.mv small {
+  font-size: 0.7rem;
+  color: var(--enemy);
+}
+
+.mv small.earn {
+  color: var(--gold);
+}
+
+@media (max-width: 1000px) {
+  .stage.battle {
+    --board: min(calc(100vw - 32px), 600px);
+  }
+
+  .cards {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .card-hint {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+}
+
+.loop {
+  margin: 4px 0 0;
+  padding-left: 22px;
+  font: 400 0.98rem / 1.5 var(--serif);
+  color: var(--ink-2);
+  max-width: 52ch;
+}
+
+.loop li {
+  margin: 4px 0;
+}
+
+.loop b {
+  color: var(--ink);
 }

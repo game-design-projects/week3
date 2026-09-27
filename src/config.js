@@ -4,7 +4,7 @@
 // lives here. After changing prices, caps, levels or AI presets, bump
 // BALANCE_VERSION so telemetry from different balance passes can be told apart.
 
-export const APP_VERSION = '0.3.0'; // keep in sync with package.json + CHANGELOG.md
+export const APP_VERSION = '0.3.1'; // keep in sync with package.json + CHANGELOG.md
 export const BALANCE_VERSION = 'b3'; // b2: mid-battle purchases; b3: capture bounty + AI shops too
 
 // Buyable piece types, in display order. The king is free and mandatory.
@@ -80,7 +80,7 @@ export const LEVELS = [
     id: 'L1',
     name: 'The Keep',
     blurb:
-      'A small garrison shelters its king behind three pawns. Hire an army with 12 gold and deliver checkmate.',
+      'A small garrison shelters its king behind three pawns. Hire an army with 12 gold, keep some back or earn more by capturing, and buy reinforcements mid-battle until you deliver checkmate.',
     budget: 12,
     playerSide: 'w',
     aiPreset: 'normal',

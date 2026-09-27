@@ -5,6 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-26
+
+### Changed
+- The economy now frames the battle: your **war chest** sits under the board (gold, bounty earned, what you bought, and shop cards you can **drag onto your back two ranks**), and the enemy's war chest sits above it, so enemy purchases are visible.
+- Economy events show on the board: `+2 g` floats up from a capture square, a bought piece lands with a gold flash and `−3 g`; the move list marks purchases (`B@c1 −3g`) and bounties (`+2g`); the status line says "Your move: move or buy".
+- Title page and Level 1 briefing lead with the buy-your-army loop (Recruit → Deploy → Fight and buy) instead of "ordinary chess".
+
 ## [0.3.0] - 2026-09-26
 
 ### Added

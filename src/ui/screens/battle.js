@@ -76,10 +76,21 @@ export function mount(root, ctx, params) {
   const evalBar = demo ? h('div', { class: 'eval-bar', 'aria-hidden': 'true' }, h('div', { class: 'eval-fill' })) : null;
   const right = h('aside', { class: 'side-col log-col' });
   const modal = h('div', { class: 'modal-backdrop', hidden: true });
+  // The economy frames the board: Black's war chest above, White's below.
+  const topBank = h('div', { class: 'bank top', dataset: { testid: 'bank-b' } });
+  const bottomBank = h('div', { class: 'bank bottom', dataset: { testid: 'bank-w' } });
   root.append(
-    h('section', { class: `stage battle${demo ? ' demo' : ''}` }, left, h('div', { class: 'center' }, evalBar, boardWrap, promoEl), right),
+    h(
+      'section',
+      { class: `stage battle${demo ? ' demo' : ''}` },
+      left,
+      h('div', { class: 'center' }, evalBar, h('div', { class: 'board-col' }, topBank, boardWrap, bottomBank, promoEl)),
+      right,
+    ),
     modal,
   );
+  const plyMeta = []; // per ply: { earned, cost } — shown in the move list
+  const bought = { w: [], b: [] }; // purchases made during this battle, per side
 
   const board = createBoard(boardWrap, {
     orientation: 'w',
@@ -151,9 +162,14 @@ export function mount(root, ctx, params) {
     dropType = null;
     selected = null;
     targets = [];
+    plyMeta.push({ cost: r.cost });
+    bought[r.color].push({ type, square, cost: r.cost });
     rec.drop({ side: r.color, type, square, cost: r.cost, san: r.san, materialDiff: match.material().diff });
     ctx.sound.play(r.check ? 'check' : 'buy');
+    if (!human[r.color] && !demo) ctx.toast(`The enemy bought a ${PIECE_NAMES[type].toLowerCase()} for ${r.cost} g and dropped it on ${square}.`);
     afterTurn(null);
+    board.land(square);
+    board.flash(square, `−${r.cost} g`, 'spend');
     return r;
   }
 
@@ -161,10 +177,11 @@ export function mount(root, ctx, params) {
     const r = match.move(move);
     selected = null;
     targets = [];
+    plyMeta.push({ earned: r.earned });
     rec.ply({ san: r.san, materialDiff: match.material().diff });
     ctx.sound.play(r.check ? 'check' : r.captured ? 'capture' : 'move');
-    if (r.earned && human[r.color] && !demo) ctx.toast(`+${r.earned} gold bounty for the ${PIECE_NAMES[r.captured].toLowerCase()}`);
     afterTurn({ from: r.from, to: r.to });
+    if (r.earned) board.flash(r.to, `+${r.earned} g`, 'gain');
     return r;
   }
 
@@ -324,54 +341,87 @@ export function mount(root, ctx, params) {
       'div',
       { class: `side-block ${side === 'w' ? 'ally' : 'enemy'}${toMove ? ' to-move' : ''}` },
       h('div', { class: 'side-head' }, h('span', { class: 'side-name' }, who), lead > 0 ? h('span', { class: 'lead num' }, `+${lead}`) : null),
-      h('div', { class: 'side-meta' }, h('span', {}, armyLabel(p.army)), rules.battleShop ? h('span', { class: 'num gold' }, `${match.reserve[side]} g`) : null),
+      h('div', { class: 'side-meta' }, h('span', {}, `Recruited ${armyLabel(p.army)}`)),
       caps.length ? h('div', { class: 'captures' }, caps.map((t) => pieceImg(side === 'w' ? 'b' : 'w', t, 'cap'))) : null,
     );
   }
 
-  /** The shop for the human side to move (or the player's side while waiting). */
-  function shop() {
-    if (demo || !rules.battleShop) return null;
-    const side = hotseat ? match.turn() : 'w';
-    if (!human[side]) return null;
+  /** Start dragging a shop card; a short click just selects it. */
+  function cardPointerDown(e, type) {
+    if (!canAct() || e.button > 0) return;
+    const start = { x: e.clientX, y: e.clientY };
+    let ghost = null;
+    const move = (ev) => {
+      if (!ghost && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
+      if (!ghost) {
+        if (dropType !== type) chooseShopPiece(type);
+        const size = boardWrap.getBoundingClientRect().width / 8;
+        ghost = h('img', { class: 'drag-ghost', src: `assets/pieces/${match.turn()}${type.toUpperCase()}.svg`, alt: '', style: { width: `${size}px`, height: `${size}px` } });
+        document.body.append(ghost);
+      }
+      ghost.style.transform = `translate(${ev.clientX}px, ${ev.clientY}px) translate(-50%, -50%)`;
+    };
+    const up = (ev) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (!ghost) return chooseShopPiece(type); // plain click
+      ghost.remove();
+      const sq = board.squareAt(ev.clientX, ev.clientY);
+      if (sq && targets.some((t) => t.square === sq)) buyAndDrop(type, sq);
+      else {
+        if (sq) ctx.sound.play('illegal');
+        dropType = null;
+        targets = [];
+        paintBoard();
+        paintPanels();
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  /** One side's war chest: gold, what it earned and bought, and (for a human on turn) the shop. */
+  function bank(side) {
     const gold = match.reserve[side];
+    const earned = match.earned()[side];
+    const isHuman = human[side];
     const myTurn = canAct() && match.turn() === side;
-    const droppable = myTurn ? new Set(match.droppableTypes()) : new Set();
-    return h(
+    const who = demo ? `${SIDE[side]} · ${presetOf(side).label}` : hotseat ? SIDE[side] : side === 'w' ? 'Your war chest' : `Enemy war chest · ${presetOf(side).label}`;
+    const head = h(
       'div',
-      { class: `battle-shop${dropType ? ' active' : ''}`, dataset: { testid: 'reinforcements' } },
-      h('div', { class: 'section-head' }, h('span', {}, hotseat ? `${SIDE[side]}'s shop` : 'Shop'), h('span', { class: 'num gold' }, `${gold} g`)),
+      { class: 'bank-head' },
+      h('span', { class: 'bank-who' }, who),
+      h('span', { class: `bank-gold num${myTurn && gold > 0 ? ' ready' : ''}` }, h('i', { class: 'coin' }), `${gold}`, h('small', {}, ' g')),
+      h('span', { class: 'bank-log' }, earned ? `+${earned} g from captures` : rules.captureBounty ? 'captures pay gold' : '', bought[side].length ? ` · bought ${bought[side].map((b) => `${b.type.toUpperCase()}@${b.square}`).join(' ')}` : ''),
+    );
+    if (!rules.battleShop || !isHuman || demo) return [head];
+    const droppable = myTurn ? new Set(match.droppableTypes()) : new Set();
+    const cards = PIECE_TYPES.map((t) =>
       h(
-        'div',
-        { class: 'shop-row' },
-        PIECE_TYPES.map((t) =>
-          h(
-            'button',
-            {
-              class: `shop-tile${dropType === t ? ' on' : ''}`,
-              type: 'button',
-              disabled: !droppable.has(t),
-              'aria-pressed': String(dropType === t),
-              'aria-label': `Buy a ${PIECE_NAMES[t]} for ${PRICES[t]} gold and drop it`,
-              title: `${PIECE_NAMES[t]}: ${PRICES[t]} gold`,
-              dataset: { testid: `reinforce-${t}` },
-              onclick: () => chooseShopPiece(t),
-            },
-            pieceImg(side, t),
-            h('span', { class: 'num' }, PRICES[t]),
-          ),
-        ),
-      ),
-      h(
-        'p',
-        { class: 'fine' },
-        dropType
-          ? `Put the ${PIECE_NAMES[dropType].toLowerCase()} on a marked square. Buying uses your turn.`
-          : rules.captureBounty
-            ? 'Buy a piece instead of moving. Captures pay a bounty.'
-            : 'Buy a piece instead of moving.',
+        'button',
+        {
+          class: `card${dropType === t ? ' on' : ''}${droppable.has(t) ? '' : ' off'}`,
+          type: 'button',
+          disabled: !droppable.has(t),
+          'aria-pressed': String(dropType === t),
+          'aria-label': `Buy a ${PIECE_NAMES[t]} for ${PRICES[t]} gold and drop it into your back two ranks`,
+          title: `${PIECE_NAMES[t]}: ${PRICES[t]} gold. Drag onto your back two ranks, or click then click a square.`,
+          dataset: { testid: `reinforce-${t}` },
+          onpointerdown: (e) => droppable.has(t) && cardPointerDown(e, t),
+          onkeydown: (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), chooseShopPiece(t)),
+        },
+        pieceImg(side, t),
+        h('span', { class: 'card-price num' }, `${PRICES[t]} g`),
       ),
     );
+    const hint = !myTurn
+      ? 'You can buy on your turn.'
+      : dropType
+        ? `Put the ${PIECE_NAMES[dropType].toLowerCase()} on a gold square. It costs your turn.`
+        : gold > 0
+          ? 'Drag a piece onto your back two ranks. It costs your turn.'
+          : 'Capture pieces to earn gold.';
+    return [head, h('div', { class: 'cards', dataset: { testid: 'reinforcements' } }, cards, h('p', { class: 'card-hint' }, hint))];
   }
 
   function statusText() {
@@ -383,7 +433,9 @@ export function mount(root, ctx, params) {
     }
     if (thinking) return demo ? `${SIDE[st.turn]} is thinking…` : 'Enemy is thinking…';
     const who = hotseat ? `${SIDE[st.turn]} to move` : 'Your move';
-    return st.inCheck ? `${who}. Check!` : who;
+    const canShop = rules.battleShop && match.droppableTypes().length > 0;
+    const verb = canShop ? `${who}: move or buy` : who;
+    return st.inCheck ? `${verb}. Check!` : verb;
   }
 
   function paintPanels() {
@@ -406,14 +458,28 @@ export function mount(root, ctx, params) {
       sideBlock('b'),
       h('div', { class: `status${thinking ? ' thinking' : ''}`, dataset: { testid: 'battle-status' }, role: 'status' }, statusText()),
       sideBlock('w'),
-      shop(),
       actions,
     );
+    fill(topBank, bank('b'));
+    fill(bottomBank, bank('w'));
+    topBank.classList.toggle('turn', !ended && match.turn() === 'b');
+    bottomBank.classList.toggle('turn', !ended && match.turn() === 'w');
+    bottomBank.classList.toggle('shopping', !!dropType);
 
     const sans = match.history();
     const rows = [];
+    const cell = (i) => {
+      if (sans[i] === undefined) return h('span', { class: 'mv' });
+      const m = plyMeta[i] ?? {};
+      return h(
+        'span',
+        { class: `mv num${m.cost ? ' buy' : ''}` },
+        sans[i],
+        m.cost ? h('small', {}, ` −${m.cost}g`) : m.earned ? h('small', { class: 'earn' }, ` +${m.earned}g`) : null,
+      );
+    };
     for (let i = 0; i < sans.length; i += 2) {
-      rows.push(h('li', {}, h('span', { class: 'mv-n num' }, `${i / 2 + 1}`), h('span', { class: 'mv num' }, sans[i]), h('span', { class: 'mv num' }, sans[i + 1] ?? '')));
+      rows.push(h('li', {}, h('span', { class: 'mv-n num' }, `${i / 2 + 1}`), cell(i), cell(i + 1)));
     }
     const list = h('ol', { class: 'moves' }, rows);
     const title = level ? `Level 1: ${level.name}` : demo ? 'Demo: AI vs AI' : hotseat ? 'Free mode, hotseat' : `Free mode vs ${presetOf('b').label}`;

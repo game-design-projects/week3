@@ -140,6 +140,28 @@ test('mid-battle purchase: keep gold, drop a knight as a move, AI replies, telem
   await context.close();
 });
 
+test('shop: drag a card from the war chest onto the board', async () => {
+  const { context, page, errors } = await open();
+  await page.click(tid('menu-level-L1'));
+  await page.click(tid('buy-r'));
+  await page.click(tid('start-battle'));
+  await page.waitForSelector(tid('reinforce-b'));
+  const card = await page.locator(tid('reinforce-b')).boundingBox();
+  const target = await page.locator('[data-square="c1"]').boundingBox();
+  await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(card.x + 20, card.y - 40, { steps: 4 });
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${ART}shop-drop-1280.png` });
+  assert.equal(await page.evaluate(() => window.__cbs.match.chess.get('c1')?.type), 'b');
+  assert.equal(await page.evaluate(() => window.__cbs.match.reserve.w), 4);
+  assert.match(await page.textContent('.moves'), /B@c1/);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('free mode vs AI: draft to completion, deploy, battle', async () => {
   const { context, page, errors } = await open();
   await page.click(tid('menu-free'));
