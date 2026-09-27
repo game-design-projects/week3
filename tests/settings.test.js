@@ -30,6 +30,17 @@ test('settings: sanitize drops junk, wrong types and unknown presets; survives c
   assert.deepEqual(blocked.rules(), { captureBounty: false });
 });
 
+test('settings: effects level is one of full/subtle/off (junk → default) and is not a rule', () => {
+  assert.equal(DEFAULT_SETTINGS.effects, 'full');
+  assert.equal(sanitize({ effects: 'subtle' }).effects, 'subtle');
+  assert.equal(sanitize({ effects: 'off' }).effects, 'off');
+  assert.equal(sanitize({ effects: 'maximum' }).effects, 'full');
+  const s = createSettings({ storage: null });
+  s.set({ effects: 'off' });
+  assert.equal(s.get().effects, 'off');
+  assert.deepEqual(s.rules(), { captureBounty: true }, 'feel is recorded separately, never passed to Match');
+});
+
 test('settings: onChange listeners fire', () => {
   const s = createSettings({ storage: null });
   let seen = null;

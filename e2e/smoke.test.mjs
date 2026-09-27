@@ -94,6 +94,33 @@ async function clickLegalMove(page) {
 
 const waitPlies = (page, n) => page.waitForFunction((k) => window.__cbs.match?.plies() >= k, n, { timeout: 15000 });
 
+/** The purse display (which lags while coins fly) ends on the true gold total. */
+const purseSettles = (page, side) =>
+  page.waitForFunction((s) => document.querySelector(`[data-testid="bank-${s}"] .gv`)?.textContent === String(window.__cbs.match.reserve[s]), side, { timeout: 3000 });
+
+/** Buy `type` and drop it on `square` by clicking (for the side to move). */
+async function buyAt(page, type, square) {
+  await page.waitForFunction((t) => document.querySelector(`[data-testid="reinforce-${t}"]`) && !document.querySelector(`[data-testid="reinforce-${t}"]`).disabled, type, { timeout: 15000 });
+  await page.click(tid(`reinforce-${type}`));
+  await page.click(`[data-square="${square}"]`);
+}
+
+async function moveBy(page, from, to) {
+  await page.click(`[data-square="${from}"]`);
+  await page.click(`[data-square="${to}"]`);
+}
+
+/** Free battle, hotseat, 8 gold each. */
+async function hotseat8(page) {
+  await page.click(tid('menu-free'));
+  await page.click(tid('free-gold-8'));
+  await page.click(tid('free-opponent-hotseat'));
+  await page.click(tid('free-start'));
+  await page.waitForSelector(tid('reinforce-r'));
+}
+
+const fxCount = (page) => page.$$eval('.fx-layer > *', (els) => els.length);
+
 test('level 1: straight into battle with a lone king; buy by drag and by click; AI answers; resign; telemetry; play again', async () => {
   const { context, page, errors } = await open();
   await page.screenshot({ path: `${ART}menu-1280.png` });
@@ -106,6 +133,12 @@ test('level 1: straight into battle with a lone king; buy by drag and by click; 
 
   await dragCard(page, 'r', 'a1');
   assert.equal(await page.evaluate(() => window.__cbs.match.chess.get('a1')?.type), 'r');
+  // game feel: the price is counted out of the purse as coins, the drop leaves an ink ring
+  await page.waitForSelector('.fx-layer .fx-coin', { state: 'attached', timeout: 1000 });
+  await page.waitForSelector('.fx-layer .fx-ring', { state: 'attached', timeout: 1000 });
+  await page.waitForTimeout(90);
+  await page.screenshot({ path: `${ART}battle-fx-drop-1280.png` });
+  await purseSettles(page, 'w');
   await page.screenshot({ path: `${ART}battle-drop-1280.png` });
   await waitPlies(page, 2);
   assert.deepEqual(await noPageScroll(page), { v: true, h: true }, 'battle fits 1280x720');
@@ -245,6 +278,7 @@ test('demo: AI vs AI builds armies from lone kings, with commentary, and records
   await page.screenshot({ path: `${ART}demo-options-1280.png` });
   await page.click(tid('demo-speed-fast'));
   await page.click(tid('demo-start'));
+  await page.waitForSelector('.fx-layer .fx-coin, .fx-layer .fx-ring', { state: 'attached', timeout: 10000 }); // the demo shows the juice too
   await waitPlies(page, 8);
   const drops = await page.evaluate(() => window.__cbs.match.drops().map((d) => d.color));
   assert.ok(drops.includes('w') && drops.includes('b'), 'both AIs bought pieces');
@@ -254,6 +288,96 @@ test('demo: AI vs AI builds armies from lone kings, with commentary, and records
   await page.screenshot({ path: `${ART}demo-1280.png` });
   await page.click(tid('demo-stop'));
   assert.equal((await sessions(page)).length, 0, 'demo games are not playtest data');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('game feel: a capture shakes the board and counts its bounty into the purse; mate stamps the board and topples the king', async () => {
+  const { context, page, errors } = await open();
+  await hotseat8(page);
+  // capture: W R@a1, B R@a8, W Rxa8 (+2 g bounty)
+  await buyAt(page, 'r', 'a1');
+  await buyAt(page, 'r', 'a8');
+  await page.waitForTimeout(400);
+  await moveBy(page, 'a1', 'a8');
+  assert.equal(await page.evaluate(() => window.__cbs.match.reserve.w), 5, 'state is immediate: 8 − 5 + 2');
+  await page.waitForFunction(() => document.querySelector('.board-col').getAnimations().length > 0, null, { timeout: 1500, polling: 16 }); // shake
+  await page.waitForSelector('.fx-layer .fx-coin', { state: 'attached', timeout: 1500 });
+  await page.waitForTimeout(120);
+  await page.screenshot({ path: `${ART}fx-capture-1280.png` });
+  await purseSettles(page, 'w');
+  await page.click(tid('resign'));
+  await page.click(tid('resign-confirm'));
+  await page.waitForSelector(tid('result-modal'));
+  await page.click(tid('result-rematch'));
+  await page.waitForFunction(() => window.__cbs.match?.plies() === 0);
+
+  // mate: W R@a1, B P@d7, W P@h2, B P@e7, W P@g2, B P@f7, W P@f2, B R@h8 (Black is broke), W Ra8#
+  for (const [t, sq] of [['r', 'a1'], ['p', 'd7'], ['p', 'h2'], ['p', 'e7'], ['p', 'g2'], ['p', 'f7'], ['p', 'f2'], ['r', 'h8']]) await buyAt(page, t, sq);
+  await page.waitForTimeout(300);
+  await moveBy(page, 'a1', 'a8');
+  const stamp = await page.waitForSelector('.fx-layer [data-testid="fx-stamp"].big', { timeout: 2000 });
+  assert.equal(await stamp.textContent(), 'Checkmate');
+  await page.waitForTimeout(650);
+  await page.screenshot({ path: `${ART}fx-mate-1280.png` });
+  const kingTilt = await page.evaluate(() => getComputedStyle(document.querySelector('[data-square="e8"] .piece')).transform);
+  assert.notEqual(kingTilt, 'none', 'the mated king has toppled');
+  await page.waitForSelector(tid('result-modal'), { timeout: 4000 });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${ART}fx-result-1280.png` });
+  const last = (await sessions(page)).at(-1);
+  assert.equal(last.endReason, 'checkmate');
+  assert.equal(last.winner, 'w');
+  assert.deepEqual(last.feel, { effects: 'full', effective: 'full', sound: true });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('game feel off: Effects Off (and Animations off) show no effects, the purse is exact at once, and sessions record the level', async () => {
+  const { context, page, errors } = await open();
+  await page.click(tid('menu-settings'));
+  await page.click(tid('setting-effects-off'));
+  await page.screenshot({ path: `${ART}settings-effects-1280.png` });
+  assert.equal(await page.evaluate(() => document.body.dataset.fx), 'off');
+  await page.click(tid('nav-menu'));
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-r'));
+  await dragCard(page, 'r', 'a1');
+  assert.equal(await page.textContent('[data-testid="bank-w"] .gv'), String(await page.evaluate(() => window.__cbs.match.reserve.w)), 'no lag when off');
+  await page.waitForTimeout(150);
+  assert.equal(await fxCount(page), 0, 'no fx elements with Effects off');
+  let active = await page.evaluate(() => window.__cbs.ctx.recorder.active());
+  assert.deepEqual(active.feel, { effects: 'off', effective: 'off', sound: true });
+
+  // Effects Full but Animations off → still nothing moves (body.no-anim), and the session says why
+  await page.click(tid('nav-settings'));
+  await page.click(tid('setting-effects-full'));
+  await page.click(tid('setting-animations'));
+  assert.equal(await page.evaluate(() => document.body.dataset.fx), 'off');
+  await page.click(tid('nav-menu'));
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-r'));
+  await dragCard(page, 'r', 'a1');
+  await page.waitForTimeout(150);
+  assert.equal(await fxCount(page), 0, 'no fx elements with Animations off');
+  active = await page.evaluate(() => window.__cbs.ctx.recorder.active());
+  assert.deepEqual(active.feel, { effects: 'full', effective: 'off', sound: true });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('game feel: a card released just below the board snaps to the nearest legal square (drop forgiveness)', async () => {
+  const { context, page, errors } = await open();
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-n'));
+  const card = await page.locator(tid('reinforce-n')).boundingBox();
+  const b1 = await page.locator('[data-square="b1"]').boundingBox();
+  await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b1.x + b1.width / 2, b1.y + b1.height + 30, { steps: 6 }); // off the board, in the gap above the chest
+  assert.equal(await page.$$eval('.sq.drop-hover', (els) => els.map((e) => e.dataset.square).join()), 'b1', 'preview shows where it will land');
+  await page.mouse.up();
+  assert.equal(await page.evaluate(() => window.__cbs.match.chess.get('b1')?.type), 'n');
   assert.deepEqual(errors, []);
   await context.close();
 });

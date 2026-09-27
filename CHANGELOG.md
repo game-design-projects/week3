@@ -5,6 +5,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **Game feel pass (Lecture 2).** The effects are made of the book's own materials (ink, stamps, coins, paper), and each one reports game state:
+  - Piece moves have anticipation (lift and pull-back), eased travel scaled by distance, overshoot and settle, and a landing squash. A dragged piece just thuds where you drop it.
+  - On a capture, the taken piece stays until it is hit and is then knocked off its square. Ink spatter appears in the attacker's colour, the board shakes in proportion to the piece's price, and rook and queen captures get a 70 ms hit-stop.
+  - Bounty gold flies from the capture square into the capturer's purse as coins, and the counter ticks up coin by coin. A purchase pays out of the purse coin by coin, and the piece is stamped down with an ink ring and a printer's registration mark.
+  - Check stamps "Check" beside the threatened king, and the checked square pulses. Mate freezes for 240 ms, then a big stamp lands (Checkmate / Stalemate / Resigns / Draw), the losing king wobbles and topples, and a win brings paper-chip confetti. The result verdict is stamped in.
+  - Dragging a card or piece lifts it with a hard print shadow and tilts it with the pointer's speed. The landing square is previewed, and a rejected drop flashes the square red, shudders, buzzes and snaps back.
+  - Drop forgiveness: a card released just off the board edge snaps to the nearest legal square within 0.6 of a square.
+  - The AI's thinking shows as a quill line drawn under the status and a dashed purse. The demo's eval bar leaves a hatched trail of the last swing.
+  - Micro-interactions: a printer's fist (☞) on the contents page, cards that lift and tilt, buttons that press into the page, legal-move dots that pop in, and dialogs laid down like a page.
+- Synthesized sounds rebuilt as pure, tested recipes: a wooden thock, a capture thud that deepens with the piece's value, a purchase stamp, coins that climb in pitch as they are counted, a mate thud, and a two-tone buzz for errors.
+- **Settings → Effects: Full / Subtle / Off.** Animations off and the OS "reduce motion" preference also force Off. Sessions record `feel: { effects, effective, sound }` so playtests can compare feel levels.
+- `FEEL` block in `src/config.js` holding every effect timing and intensity. `src/ui/feel.js` holds the pure effect shapes (unit-tested) and `src/ui/fx.js` the DOM effect layer.
+- Tests: effect shapes and scaling (`tests/feel.test.js`), sound recipes (`tests/sound.test.js`), the effects setting and the recorded `feel`. E2E: effects appear on drops, captures and mate and in the demo; none appear with Effects Off or Animations off; drop forgiveness.
+
+### Changed
+- The purse display lags the true total while coins are in flight (under a second) and always ends on it; the game state itself is never delayed. With effects on, the result dialog appears about 1.5 s after mate (0.65 s when off) so the stamp can land.
+- The board's `onDrop` can reject a drop, and the piece then flies back. `render()` returns when the moved piece lands. `land()` was replaced by drop animations passed to `render()`.
+
 ## [0.4.0] - 2026-09-26
 
 ### Changed

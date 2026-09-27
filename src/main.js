@@ -9,6 +9,7 @@ import { createStore } from './telemetry/store.js';
 import { createRecorder } from './telemetry/session.js';
 import { createSettings } from './settings.js';
 import { createSound } from './ui/sound.js';
+import { currentFeel } from './ui/fx.js';
 import * as menu from './ui/screens/menu.js';
 import * as battle from './ui/screens/battle.js';
 import * as free from './ui/screens/free.js';
@@ -65,6 +66,7 @@ const soundBtn = document.querySelector('[data-testid="sound-toggle"]');
 function applySettings(v) {
   document.body.classList.toggle('no-coords', !v.showCoords);
   document.body.classList.toggle('no-anim', !v.animations);
+  document.body.dataset.fx = currentFeel(settings); // 'full' | 'subtle' | 'off' — CSS micro-interactions key on it
   soundBtn.textContent = v.sound ? 'Sound on' : 'Sound off';
   soundBtn.setAttribute('aria-pressed', String(v.sound));
 }

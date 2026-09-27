@@ -1,8 +1,9 @@
 // Player settings, persisted per browser (localStorage, guarded).
 // Rule settings (captureBounty) change the game and are recorded
 // with every telemetry session so data from different rules can be separated.
+// The effects level (game feel) is recorded too, but as `feel`, not as a rule.
 
-import { AI_PRESETS, DEFAULT_SETTINGS } from './config.js';
+import { AI_PRESETS, DEFAULT_SETTINGS, FEEL } from './config.js';
 import { createLogger } from './lib/log.js';
 
 const log = createLogger('settings');
@@ -16,6 +17,7 @@ export function sanitize(raw) {
     if (typeof raw[k] === typeof def) out[k] = raw[k];
   }
   if (!(out.campaignAI in AI_PRESETS)) out.campaignAI = DEFAULT_SETTINGS.campaignAI;
+  if (!FEEL.levels.includes(out.effects)) out.effects = DEFAULT_SETTINGS.effects;
   return out;
 }
 
