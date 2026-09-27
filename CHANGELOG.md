@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- GitHub Actions workflow (`.github/workflows/publish-itch.yml`): every push to `main` runs the unit tests, builds `dist/`, and publishes it to itch.io (`stevenli-phoenix-work/chass:html5`) via butler, tagged with the commit SHA. Also runnable manually via `workflow_dispatch`.
+
 ## [0.1.0] - 2026-09-26
 
 ### Added

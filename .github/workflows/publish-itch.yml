@@ -1,0 +1,68 @@
+# Runs the test suite on every push to main, then publishes the build to
+# itch.io (stevenli-phoenix-work/chass:html5) via butler.
+# Needs repo secret BUTLER_API_KEY (see ~/.claude/skills/itch-publish-withcredential).
+name: Publish to itch.io
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: itch-production
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: itch-production
+      url: https://stevenli-phoenix-work.itch.io/chass
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Validate HTML5 bundle
+        run: node scripts/check-html5.mjs dist
+
+      - name: Install official butler
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 \
+            https://broth.itch.zone/butler/linux-amd64/15.31.0/archive/default -o "$RUNNER_TEMP/butler.zip"
+          unzip -q "$RUNNER_TEMP/butler.zip" -d "$RUNNER_TEMP/butler"
+          chmod +x "$RUNNER_TEMP/butler/butler"
+
+      - name: Push to itch.io
+        if: github.ref == 'refs/heads/main'
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$BUTLER_API_KEY" || { echo '::error::Missing BUTLER_API_KEY repository secret'; exit 1; }
+          "$RUNNER_TEMP/butler/butler" push dist stevenli-phoenix-work/chass:html5 --userversion "$GITHUB_SHA"
+          "$RUNNER_TEMP/butler/butler" status stevenli-phoenix-work/chass:html5

@@ -85,6 +85,10 @@ pnpm sim -- --games 4 --min-spend 11   # balance simulator (flags documented at 
 pnpm build           # dist/ = the folder uploaded to itch.io
 ```
 
+### CI
+
+Every push to `main` runs `pnpm test` and `pnpm build`, then publishes `dist/` to [itch.io](https://stevenli-phoenix-work.itch.io/chass) via [butler](https://itch.io/docs/butler/) tagged with the commit SHA (`.github/workflows/publish-itch.yml`). Can also be triggered manually from the Actions tab (`workflow_dispatch`).
+
 The AI is a small alpha-beta search written for this game, not Stockfish. That way its strength can be tuned precisely, it handles any army (two queens, no pawns, …), and the simulator runs fast. It uses chess.js's internal move generator (about 40× faster than the public API); those internals are pinned by `tests/fastchess.test.js`.
 
 ## Credits
