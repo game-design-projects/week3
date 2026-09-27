@@ -47,6 +47,7 @@ export const DEFAULT_SETTINGS = {
   animations: true,
   campaignAI: 'normal', // AI preset for campaign levels
   captureBounty: true, // rule: earn CAPTURE_BOUNTY gold for captures
+  telemetryConsent: 'unset', // 'unset' | 'granted' | 'denied' — opt-in to sending sessions to TELEMETRY.endpoint
 };
 
 // Where each side may drop bought pieces (ranks are 1..8).
@@ -107,7 +108,9 @@ export const FREE_MODE = {
 export const TELEMETRY = {
   storageKey: 'cbs.telemetry.v1',
   maxSessions: 1000,
-  // Optional collector URL. null = local only (localStorage + export/import).
-  // When set, each finished session is POSTed there as JSON via sendBeacon.
-  endpoint: null,
+  // Collector URL (Cloudflare Worker + D1, server/telemetry/). Sessions are
+  // POSTed here only when the player has opted in (settings.telemetryConsent
+  // === 'granted') — see src/telemetry/store.js `canSend`. null = local only
+  // (localStorage + export/import).
+  endpoint: 'https://chass-telemetry.lishuyustevenli.workers.dev/v1/sessions',
 };

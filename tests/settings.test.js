@@ -30,6 +30,20 @@ test('settings: sanitize drops junk, wrong types and unknown presets; survives c
   assert.deepEqual(blocked.rules(), { captureBounty: false });
 });
 
+test('settings: telemetryConsent defaults to unset, is whitelisted, and persists', () => {
+  assert.equal(DEFAULT_SETTINGS.telemetryConsent, 'unset');
+  assert.deepEqual(sanitize({ telemetryConsent: 'yes-please' }), DEFAULT_SETTINGS);
+  assert.deepEqual(sanitize({ telemetryConsent: 42 }), DEFAULT_SETTINGS);
+  assert.equal(sanitize({ telemetryConsent: 'granted' }).telemetryConsent, 'granted');
+  assert.equal(sanitize({ telemetryConsent: 'denied' }).telemetryConsent, 'denied');
+
+  const storage = mem();
+  const s = createSettings({ storage });
+  assert.equal(s.get().telemetryConsent, 'unset');
+  s.set({ telemetryConsent: 'granted' });
+  assert.equal(createSettings({ storage }).get().telemetryConsent, 'granted');
+});
+
 test('settings: onChange listeners fire', () => {
   const s = createSettings({ storage: null });
   let seen = null;

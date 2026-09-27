@@ -284,7 +284,7 @@ test('(e) endpoint set → send(url, json) once per saved session; failures swal
     if (mode === 'reject') return Promise.reject(new Error('offline'));
     return true;
   };
-  const store = createStore({ storage: memoryStorage(), key: KEY, endpoint: 'https://collect.example/cbs', send });
+  const store = createStore({ storage: memoryStorage(), key: KEY, endpoint: 'https://collect.example/cbs', send, canSend: () => true });
   const a = session();
   store.save(a);
   assert.equal(calls.length, 1);
@@ -312,6 +312,42 @@ test('(e) endpoint null → send never called', () => {
   store.save(session());
   store.save(session());
   assert.equal(called, 0);
+});
+
+test('(e) canSend defaults to false: endpoint set but no consent → send never called', () => {
+  let called = 0;
+  const store = createStore({ storage: memoryStorage(), key: KEY, endpoint: 'https://collect.example/cbs', send: () => called++ });
+  store.save(session());
+  assert.equal(called, 0);
+});
+
+test('(e) canSend() false → send skipped even with an endpoint; sessions still saved locally', (t) => {
+  const logs = captureConsole(t);
+  let called = 0;
+  const store = createStore({ storage: memoryStorage(), key: KEY, endpoint: 'https://collect.example/cbs', send: () => called++, canSend: () => false });
+  const s = session();
+  assert.equal(store.save(s), true);
+  assert.equal(called, 0);
+  assert.deepEqual(store.sessions().map((x) => x.id), [s.id]);
+});
+
+test('(e) canSend() is read fresh on every save — consent granted mid-session takes effect immediately', () => {
+  let granted = false;
+  const calls = [];
+  const store = createStore({
+    storage: memoryStorage(),
+    key: KEY,
+    endpoint: 'https://collect.example/cbs',
+    send: (url, body) => calls.push(JSON.parse(body).id),
+    canSend: () => granted,
+  });
+  const a = session();
+  store.save(a);
+  assert.deepEqual(calls, []);
+  granted = true;
+  const b = session();
+  store.save(b);
+  assert.deepEqual(calls, [b.id]);
 });
 
 test('defaultSend: sendBeacon with a text/plain Blob, fetch keepalive fallback', async (t) => {

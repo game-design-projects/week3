@@ -9,6 +9,7 @@ import { createStore } from './telemetry/store.js';
 import { createRecorder } from './telemetry/session.js';
 import { createSettings } from './settings.js';
 import { createSound } from './ui/sound.js';
+import { mountConsent } from './ui/consent.js';
 import * as menu from './ui/screens/menu.js';
 import * as battle from './ui/screens/battle.js';
 import * as free from './ui/screens/free.js';
@@ -25,8 +26,8 @@ const toastEl = document.getElementById('toast');
 let unmount = null;
 let toastTimer = null;
 
-const store = createStore();
 const settings = createSettings();
+const store = createStore({ canSend: () => settings.get().telemetryConsent === 'granted' });
 const ctx = {
   store,
   settings,
@@ -81,6 +82,9 @@ fsBtn.addEventListener('click', () => {
 });
 
 document.querySelector('[data-testid="nav-menu"]').addEventListener('click', () => go('menu'));
+
+// ---- telemetry consent: a small card over the menu until the player decides
+mountConsent(document.getElementById('consent-overlay'), ctx);
 
 // ---- lifecycle + diagnostics
 window.addEventListener('pagehide', () => ctx.recorder.abandon());

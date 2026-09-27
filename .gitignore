@@ -5,3 +5,9 @@ coverage/
 e2e/artifacts/
 .DS_Store
 *.log
+
+# Telemetry collector: local secrets and pulled exports (never committed).
+.telemetry-read-token
+telemetry-export-*.json
+server/telemetry/.wrangler/
+server/telemetry/node_modules/

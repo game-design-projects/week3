@@ -26,7 +26,12 @@ after(async () => {
   await new Promise((r) => server.close(r));
 });
 
-async function open(viewport = { width: 1280, height: 720 }) {
+// Every fresh browser context starts with telemetryConsent 'unset', so the
+// consent card is up over the menu. Default to declining so the rest of the
+// suite (written before consent existed) sees the menu as before; pass
+// `consent: 'accept'` to opt in, or `consent: 'none'` to leave the card up
+// for a test that wants to interact with it itself.
+async function open(viewport = { width: 1280, height: 720 }, { consent = 'decline' } = {}) {
   const context = await browser.newContext({ viewport, acceptDownloads: true });
   const page = await context.newPage();
   const errors = [];
@@ -36,6 +41,8 @@ async function open(viewport = { width: 1280, height: 720 }) {
   });
   await page.goto(base);
   await page.waitForSelector('[data-testid="menu-level-L1"]');
+  if (consent === 'decline') await page.click(tid('consent-decline'));
+  else if (consent === 'accept') await page.click(tid('consent-accept'));
   return { context, page, errors };
 }
 
@@ -254,6 +261,93 @@ test('demo: AI vs AI builds armies from lone kings, with commentary, and records
   await page.screenshot({ path: `${ART}demo-1280.png` });
   await page.click(tid('demo-stop'));
   assert.equal((await sessions(page)).length, 0, 'demo games are not playtest data');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('consent card: shown over the menu on first launch, keyboard accessible, no scroll; declining sets denied', async () => {
+  const { context, page, errors } = await open({ width: 1280, height: 720 }, { consent: 'none' });
+  await page.waitForSelector(tid('consent-accept'));
+  await page.screenshot({ path: `${ART}consent-1280.png` });
+  assert.deepEqual(await noPageScroll(page), { v: true, h: true }, 'consent card fits 1280x720');
+  // Both options are real, equally reachable buttons (no dark pattern of one being disabled/hidden).
+  const [acceptTag, declineTag] = await Promise.all([
+    page.evaluate((s) => document.querySelector(s)?.tagName, tid('consent-accept')),
+    page.evaluate((s) => document.querySelector(s)?.tagName, tid('consent-decline')),
+  ]);
+  assert.equal(acceptTag, 'BUTTON');
+  assert.equal(declineTag, 'BUTTON');
+  await page.locator(tid('consent-decline')).focus();
+  await page.keyboard.press('Enter');
+  const consent = await page.evaluate(() => window.__cbs.ctx.settings.get().telemetryConsent);
+  assert.equal(consent, 'denied');
+  await page.waitForSelector(tid('consent-accept'), { state: 'hidden' });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('consent accepted: a finished session is POSTed to the telemetry endpoint', async () => {
+  const { context, page, errors } = await open({ width: 1280, height: 720 }, { consent: 'none' });
+  const posts = [];
+  await page.route('**/v1/sessions', async (route) => {
+    posts.push(route.request().postData());
+    await route.fulfill({ status: 204 });
+  });
+  await page.click(tid('consent-accept'));
+  assert.equal(await page.evaluate(() => window.__cbs.ctx.settings.get().telemetryConsent), 'granted');
+
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-r'));
+  await page.click(tid('resign'));
+  await page.click(tid('resign-confirm'));
+  await page.waitForSelector(tid('result-modal'));
+  await page.waitForTimeout(200); // sendBeacon fires synchronously, but give the route handler a tick
+
+  assert.equal(posts.length, 1, 'exactly one session was posted to the collector');
+  const body = JSON.parse(posts[0]);
+  assert.equal(body.schema, 1);
+  assert.equal(body.mode, 'level');
+  assert.equal(body.result, 'loss');
+  assert.match(body.playerId, /^p_[0-9a-f]{16}$/);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('consent declined: no request ever reaches the telemetry endpoint', async () => {
+  const { context, page, errors } = await open({ width: 1280, height: 720 }, { consent: 'none' });
+  let called = false;
+  await page.route('**/v1/sessions', async (route) => {
+    called = true;
+    await route.fulfill({ status: 204 });
+  });
+  await page.click(tid('consent-decline'));
+  assert.equal(await page.evaluate(() => window.__cbs.ctx.settings.get().telemetryConsent), 'denied');
+
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-r'));
+  await page.click(tid('resign'));
+  await page.click(tid('resign-confirm'));
+  await page.waitForSelector(tid('result-modal'));
+  await page.waitForTimeout(200);
+
+  assert.equal(called, false, 'declining consent must never call the endpoint');
+  const s = await sessions(page);
+  assert.equal(s.length, 1, 'the session is still recorded locally');
+  await context.close();
+});
+
+test('settings: Privacy switch changes consent any time, and the dashboard reflects it', async () => {
+  const { context, page, errors } = await open(); // declines on the first-run card
+  await page.click(tid('menu-settings'));
+  assert.equal(await page.getAttribute(tid('setting-telemetryConsent'), 'aria-checked'), 'false');
+  await page.click(tid('setting-telemetryConsent'));
+  assert.equal(await page.evaluate(() => window.__cbs.ctx.settings.get().telemetryConsent), 'granted');
+  await page.click(tid('nav-menu'));
+  await page.click(tid('menu-dashboard'));
+  assert.match(await page.textContent(tid('dash-consent-note')), /Sharing is on/);
+  await page.click(tid('nav-settings'));
+  await page.click(tid('setting-telemetryConsent'));
+  assert.equal(await page.evaluate(() => window.__cbs.ctx.settings.get().telemetryConsent), 'denied');
   assert.deepEqual(errors, []);
   await context.close();
 });
