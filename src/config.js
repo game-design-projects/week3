@@ -4,8 +4,8 @@
 // lives here. After changing prices, caps, levels or AI presets, bump
 // BALANCE_VERSION so telemetry from different balance passes can be told apart.
 
-export const APP_VERSION = '0.1.0'; // keep in sync with package.json + CHANGELOG.md
-export const BALANCE_VERSION = 'b1';
+export const APP_VERSION = '0.2.0'; // keep in sync with package.json + CHANGELOG.md
+export const BALANCE_VERSION = 'b2'; // b2: mid-battle purchases (reinforcements)
 
 // Buyable piece types, in display order. The king is free and mandatory.
 export const PIECE_TYPES = ['q', 'r', 'b', 'n', 'p'];
@@ -25,6 +25,12 @@ export const PRICES = { q: 9, r: 5, b: 3, n: 3, p: 1 };
 // Max copies of each piece one side may own — a standard chess set.
 // Stops queen spam in free mode and bounds army size (15 + king = 16 squares).
 export const CAPS = { q: 1, r: 2, b: 2, n: 2, p: 8 };
+
+// Mid-battle purchases ("reinforcements"): gold left unspent after recruiting
+// is kept as a reserve. On your turn you may, instead of moving, buy a piece
+// and drop it on an empty square of your deployment zone (same ZONES as below).
+// Set to false to go back to the b1 rules (buy only before the battle).
+export const BATTLE_PURCHASES = true;
 
 // Where each side may place pieces before the battle (ranks are 1..8).
 // Non-pawns may use any rank in `ranks`; pawns only `pawnRanks`.

@@ -1140,6 +1140,74 @@ h3 {
   color: var(--muted);
 }
 
+/* reinforcements (mid-battle purchases) */
+.drop-mode .sq.zone::before {
+  background: rgba(224, 183, 94, 0.3);
+}
+
+
+.reinforce {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px dashed rgba(224, 183, 94, 0.35);
+  background: rgba(224, 183, 94, 0.05);
+}
+
+.reinforce.active {
+  border-style: solid;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+.reinforce-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.purse-value.small {
+  font-size: 1.1rem;
+}
+
+.reinforce-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.reinforce-btn {
+  display: grid;
+  justify-items: center;
+  padding: 3px 0 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--panel-3);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  color: var(--gold);
+}
+
+.reinforce-btn img {
+  width: 30px;
+  height: 30px;
+}
+
+.reinforce-btn.on {
+  border-color: var(--gold);
+  background: rgba(224, 183, 94, 0.2);
+}
+
+.reinforce-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.reinforce-hint {
+  margin: 6px 0 0;
+  color: var(--gold);
+}
+
 /* ------------------------------------------------------------ modal */
 .modal-backdrop {
   position: fixed;

@@ -23,7 +23,7 @@ export function simulateGame({ white, black, whitePreset, blackPreset, seed = 1,
   const match = new Match({ startFen });
   while (!match.status().over && match.plies() < maxPlies) {
     const preset = match.turn() === 'w' ? whitePreset : blackPreset;
-    const r = chooseMove({ startFen, moves: match.historyUci(), preset, seed: seed * 1000 + match.plies() });
+    const r = chooseMove({ ...match.aiRequest(), preset, seed: seed * 1000 + match.plies() });
     match.move({ from: r.from, to: r.to, promotion: r.promotion });
   }
   const st = match.status();

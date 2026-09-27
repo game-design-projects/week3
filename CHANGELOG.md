@@ -5,8 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-26
+
 ### Added
+- **Mid-battle purchases (reinforcements):** unspent gold carries into the battle as a war chest; on your turn you may buy a piece and drop it on an empty square of your deployment zone instead of moving (caps counted on the board; a drop can block check, so it can prevent mate or stalemate). Toggle with `BATTLE_PURCHASES` in `src/config.js`.
+- Reinforcement panel on the battle screen, gold drop-zone highlight, drops shown as `N@b1` in the move list and PGN.
+- Telemetry: each side's `reserve` at battle start, a `drops` list per session, `action: 'drop'` purchase entries; CSV columns `whiteReserve`, `blackReserve`, `drops`.
+- `Match.aiRequest()` so the AI replays only the segment since the last drop.
 - GitHub Actions workflow (`.github/workflows/publish-itch.yml`): every push to `main` runs the unit tests, builds `dist/`, and publishes it to itch.io (`stevenli-phoenix-work/chass:html5`) via butler, tagged with the commit SHA. Also runnable manually via `workflow_dispatch`.
+
+### Changed
+- Balance version bumped to `b2` (new rules); the AI never keeps a reserve (level enemy has none; the draft AI spends its purse).
 
 ## [0.1.0] - 2026-09-26
 

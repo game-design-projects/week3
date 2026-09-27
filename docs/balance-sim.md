@@ -2,6 +2,8 @@
 
 > **This is simulated, not human, data.** An AI (the *Captain* preset, depth 2) stands in for the player, so read it as a first rough guess to check against real playtest telemetry, not as a verdict.
 
+> **Rules version:** recorded under balance `b1`. The simulated player always spends its gold before the battle and never calls reinforcements, so this baseline doesn't cover the `b2` war-chest mechanic. Human telemetry (which records `reserve` and `drops`) is the way to judge that.
+
 **Setup:** Level 1 "The Keep" (12 gold vs K g8, R d8, B e7, P f7 g7 h7), balance version `b1`. Enemy AI `normal` (Captain), player AI `normal`. Every army that spends 11–12 gold (31 armies), 4 games each with different auto-placements and seeds. Games were capped at 160 plies; a game that hit the cap counts as a draw.
 
 ```bash

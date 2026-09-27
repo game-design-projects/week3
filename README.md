@@ -4,7 +4,7 @@
 
 **Recruit an army with a fixed purse of gold. Deploy it. Then play real chess until one king falls.**
 
-A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives you a budget and shows you the enemy's army; you buy pieces (Queen 9, Rook 5, Bishop 3, Knight 3, Pawn 1, King free), place them in your back two ranks, and then play standard chess against an AI until someone is checkmated.
+A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives you a budget and shows you the enemy's army; you buy pieces (Queen 9, Rook 5, Bishop 3, Knight 3, Pawn 1, King free), place them in your back two ranks, and then play standard chess against an AI until someone is checkmated. **Gold you don't spend is your war chest.** On any turn, instead of moving, you can buy a piece and drop it into your deployment zone.
 
 - **Play online:** https://stevenli-phoenix-work.itch.io/chass
 - **Play locally:** `pnpm install && pnpm dev`, then open http://localhost:5173 (designed for a 1280×720 desktop window; also works on phones).
@@ -17,7 +17,7 @@ A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives
 | **Free mode · The Draft** | Both sides get the same budget (8 / 12 / 20 / 39) and alternate buying one piece at a time; passing locks your army. Black drafts first (White moves first). Play the AI (Recruit / Captain / Warlord) or a friend on the same device. |
 | **Playtest data** | Every session is recorded locally: win rate per army, what players buy, how games end, a learning curve, and the full PGN of each game. Export JSON/CSV, import files from other testers. |
 
-**Rules:** normal chess (via chess.js) with no castling. Deploy in ranks 1–2, pawns on rank 2 only (they can still double-step). Neither king may start in check. Max copies per side = one standard set (1 Q, 2 R, 2 B, 2 N, 8 P). Checkmate wins; stalemate, threefold repetition, the 50-move rule and insufficient material are draws.
+**Rules:** normal chess (via chess.js) with no castling, plus **reinforcements**: unspent gold carries into the battle, and on your turn you may spend it to drop a new piece on an empty square of your deployment zone. The drop is your move for that turn, must respect the per-type caps (counted on the board), and can block a check, so being "mated" while you still have a legal blocking drop is not mate. Deploy in ranks 1–2, pawns on rank 2 only (they can still double-step). Neither king may start in check. Max copies per side = one standard set (1 Q, 2 R, 2 B, 2 N, 8 P). Checkmate wins; stalemate, threefold repetition, the 50-move rule and insufficient material are draws.
 
 ## Strategic depth: characteristics used (Lecture 3)
 
@@ -27,7 +27,7 @@ A week-3 prototype for NYU Game Design: a point-buy chess game. Each level gives
 | **Observability** | Perfect information. The enemy army is shown *before* you spend, and in the draft every pick is public, so you can plan against what you see. |
 | **Time granularity** | Turn-based with no clock. You can think as long as you like, which is where the depth is. |
 | **Length of playtime** | A *round* is one battle. A *session* is several attempts at the level, adjusting your army after each one (Rematch or Change army). The *full game* would be a campaign of levels; this prototype has one. |
-| **Systems** | *Resources*: gold turns into pieces. *Combination*: pieces work together (two rooks ladder-mate, the bishop pair, a rook behind a passed pawn). *Conditional*: deployment rules ("if it's a pawn, then rank 2"; "if a king starts in check, you can't begin"). *Feedback loops*: a material lead snowballs through trades. The telemetry → rebalance loop sits on the designer's side. |
+| **Systems** | *Resources*: gold turns into pieces, now or later. Holding gold trades tempo and board presence for flexibility. *Combination*: pieces work together (two rooks ladder-mate, the bishop pair, a rook behind a passed pawn). *Conditional*: deployment rules ("if it's a pawn, then rank 2"; "if a king starts in check, you can't begin"). *Feedback loops*: a material lead snowballs through trades. The telemetry → rebalance loop sits on the designer's side. |
 | **Single vs multiplayer** | *One-and-a-half player* in the campaign (you vs a non-trivial AI). Competitive local multiplayer in the free-mode hotseat draft. |
 | **Dexterity vs strategy** | Zero dexterity, all strategy: thinking ahead, managing resources, and taking risks with your purchases. |
 | **Depth vs entropy** | Chess alone is deep but learned by rote. The buy phase adds a structured decision where point values are a useful compression but not a solution, so there is a *strategy ladder* to climb. |
@@ -42,7 +42,8 @@ These are the rules of thumb we expect players to discover. The telemetry exists
 4. **Don't deploy where the enemy is already aiming.** Keep your king off the d-file (rook d8) and away from the e7 bishop's diagonals. Put two bishops on opposite colours; the game lets you put them on the same colour, and that is a trap.
 5. **Quantity vs quality.** Q+3P has the most concentrated power, but the queen can be chased and traded. Cheaper pieces spread threats and shield the king.
 6. **When ahead, simplify, and don't stalemate the lone king.**
-7. *(Draft)* **Counter-pick.** Black picks first, so taking the queen early denies it. Once the other side locks, spend every remaining coin.
+7. **Gold in reserve is an answer, not an army.** A war chest lets you plug a hole or block a mate after you've seen the AI's plan, but every drop costs a tempo, and pieces left in the chest don't defend anything. Recruit what the opening needs and bank the rest.
+8. *(Draft)* **Counter-pick.** Black picks first, so taking the queen early denies it. Once the other side locks, spend every remaining coin.
 
 A good heuristic, per the lecture, applies at every stage, sits between gut feeling and brute force, and compresses the game state. "Can this army mate?" and "aim at their visible weakness" do that for buying, placing and playing alike.
 
@@ -52,6 +53,7 @@ Balancing is the hard part, so the prototype ships with two tools for it:
 
 - **Playtest telemetry (in the game).** Each session records: mode, level, AI level, budget, attempt number, buy time and purchase order (including sells), both armies (label, cost, placement), the draft log, start and final FEN, full PGN, a per-ply material timeline, and the result and end reason (checkmate, resign, stalemate, threefold, 50-move, insufficient, abandoned). Records carry `balanceVersion` so data from different tunings can be separated.
   - **Where it goes:** local-first. Data lives in the browser's localStorage, with nothing sent anywhere. Remote testers (e.g. on itch.io) click **"Download your play data"** on the result screen and send you the JSON; you **Import** it on the Playtest data screen, which dedupes by session id. To collect automatically, set `TELEMETRY.endpoint` in `src/config.js` to a URL that accepts POSTed JSON (sent with `sendBeacon`).
+- Mid-battle purchases are recorded too: each side's reserve at the start of the battle, and every drop (ply, piece, square, cost). They also appear as `N@b1` in the PGN.
 - **AI-vs-AI simulator:** `pnpm sim -- --games 4 --min-spend 11` plays every affordable army against the Level 1 garrison, with an AI standing in for the player, and prints win/draw/loss per army. See [docs/balance-sim.md](docs/balance-sim.md) for the first baseline.
 
 **Everything tunable lives in [`src/config.js`](src/config.js):** prices, caps, deployment zones, AI presets (search depth, quiescence, randomness window, time cap), the level (budget, enemy army and placement, AI preset) and free-mode budgets. Bump `BALANCE_VERSION` when you change any of them.

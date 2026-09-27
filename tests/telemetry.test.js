@@ -101,6 +101,23 @@ test('stats: summarize / byArmy / pieceStats / endReasons / learningCurve / filt
   assert.equal(summarize([]).winRate, null);
 });
 
+test('recorder: reserve carried into battle and drops are recorded as plies', () => {
+  const { store, rec } = setup();
+  rec.begin({ mode: 'level', levelId: 'L1', budget: 12, playerSide: 'w' });
+  rec.startBattle({ white: { ...WHITE, army: { q: 0, r: 1, b: 0, n: 0, p: 0 }, reserve: 7 }, black: BLACK, startFen: 'f' });
+  rec.ply({ san: 'e4', materialDiff: -6 });
+  rec.ply({ san: 'e5', materialDiff: -6 });
+  rec.drop({ side: 'w', type: 'n', square: 'b1', cost: 3, san: 'N@b1', materialDiff: -3 });
+  rec.end({ winner: 'b', reason: 'checkmate', pgn: '', finalFen: 'f' });
+  const s = store.sessions()[0];
+  assert.equal(s.white.reserve, 7);
+  assert.equal(s.black.reserve, 0);
+  assert.equal(s.plies, 3);
+  assert.deepEqual(s.drops, [{ ply: 3, side: 'w', type: 'n', square: 'b1', cost: 3 }]);
+  assert.equal(s.purchases.at(-1).action, 'drop');
+  assert.match(toCSV([s]), /w:n@b1#3/);
+});
+
 test('stats: toCSV escapes quotes, commas and newlines', () => {
   const csv = toCSV([{ id: 'a,"b"\nc', mode: 'level', white: { label: 'Q+3P', spend: 12 } }]);
   const [header, row] = csv.split('\r\n');

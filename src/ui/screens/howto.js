@@ -16,6 +16,7 @@ export function mount(root, ctx) {
         h('li', {}, h('b', {}, 'Recruit. '), `You get a purse of gold (Level 1: ${LEVELS[0].budget}). Buy pieces from the shop — the enemy army is shown so you can plan against it. Your king is free.`),
         h('li', {}, h('b', {}, 'Deploy. '), 'Pieces go in your back two ranks; pawns only on the second rank. Drag or click pieces to rearrange. Neither king may start in check.'),
         h('li', {}, h('b', {}, 'Battle. '), 'Normal chess from there (no castling). You move first. Checkmate the enemy king to win; stalemate and repetition are draws.'),
+        h('li', {}, h('b', {}, 'Reinforce. '), 'Gold you did not spend is your war chest. On your turn, instead of moving, you can buy a piece and drop it on an empty square of your deployment zone. It costs the turn — and a drop can even block a check.'),
       ),
       h('table', { class: 'price-table' }, h('thead', {}, h('tr', {}, h('th', {}, 'Piece'), h('th', {}, 'Gold'), h('th', {}, 'Max'))), h('tbody', {}, rows)),
       h('h3', {}, 'Controls'),

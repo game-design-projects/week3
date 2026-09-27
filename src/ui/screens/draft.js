@@ -33,7 +33,7 @@ export function mount(root, ctx) {
         { class: 'panel draft-options' },
         h('p', { class: 'eyebrow' }, 'Free mode'),
         h('h2', {}, 'The Draft'),
-        h('p', { class: 'dim' }, 'Both sides get the same purse and take turns buying one piece. Passing locks your army. Black picks first; White moves first.'),
+        h('p', { class: 'dim' }, 'Both sides get the same purse and take turns buying one piece. Passing locks your army — any gold left becomes your war chest for mid-battle reinforcements. Black picks first; White moves first.'),
         h('h3', {}, 'Budget'),
         h('div', { class: 'chips' }, FREE_MODE.budgets.map((b) => chip([h('i', { class: 'coin sm' }), ` ${b}`], opts.budget === b, `free-budget-${b}`, () => ((opts.budget = b), paintOptions())))),
         h('h3', {}, 'Opponent'),

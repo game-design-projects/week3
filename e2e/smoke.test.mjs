@@ -118,6 +118,28 @@ test('level 1: buy, deploy, battle vs AI in a Worker, resign, telemetry, rematch
   await context.close();
 });
 
+test('mid-battle purchase: keep gold, drop a knight as a move, AI replies, telemetry records it', async () => {
+  const { context, page, errors } = await open();
+  await page.click(tid('menu-level-L1'));
+  await page.click(tid('buy-r')); // 7 gold left → war chest
+  await page.click(tid('start-battle'));
+  await page.waitForSelector(tid('reinforcements'));
+  await page.click(tid('reinforce-n'));
+  const target = await page.evaluate(() => window.__cbs.match.legalDropSquares('n')[0]);
+  assert.ok(target);
+  await page.screenshot({ path: `${ART}reinforce-1280.png` });
+  await page.click(`[data-square="${target}"]`);
+  assert.equal(await page.evaluate(() => window.__cbs.match.reserve.w), 4);
+  assert.equal(await page.evaluate((sq) => window.__cbs.match.chess.get(sq)?.type, target), 'n');
+  await page.waitForFunction(() => window.__cbs.match?.plies() >= 2, null, { timeout: 15000 });
+  assert.deepEqual(await noPageScroll(page), { v: true, h: true }, 'battle with reinforcements fits 1280x720');
+  const active = await page.evaluate(() => window.__cbs.ctx.recorder.active());
+  assert.equal(active.white.reserve, 7);
+  assert.deepEqual(active.drops.map((d) => [d.side, d.type, d.square, d.cost]), [['w', 'n', target, 3]]);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('free mode vs AI: draft to completion, deploy, battle', async () => {
   const { context, page, errors } = await open();
   await page.click(tid('menu-free'));

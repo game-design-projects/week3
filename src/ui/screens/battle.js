@@ -2,7 +2,7 @@
 // through ctx.ai (Web Worker). Every ply is recorded to telemetry; the result
 // modal offers rematch / change army / menu and a playtest-data download.
 
-import { AI_MIN_THINK_MS, AI_PRESETS, LEVELS, PIECE_NAMES } from '../../config.js';
+import { AI_MIN_THINK_MS, AI_PRESETS, BATTLE_PURCHASES, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
 import { armyLabel } from '../../core/army.js';
 import { Match } from '../../core/game.js';
 import { buildFen } from '../../core/placement.js';
@@ -38,7 +38,9 @@ export function mount(root, ctx, params) {
     });
   }
   const startFen = buildFen(params.white.placement, params.black.placement);
-  const match = new Match({ startFen });
+  // Unspent gold becomes each HUMAN side's reinforcement reserve (the AI never keeps any).
+  const reserveOf = (side) => (BATTLE_PURCHASES && human[side] ? params[side === 'w' ? 'white' : 'black'].reserve ?? 0 : 0);
+  const match = new Match({ startFen, reserve: { w: reserveOf('w'), b: reserveOf('b') } });
   ctx.recorder.startBattle({ white: params.white, black: params.black, startFen });
   window.__cbs.match = match;
   const startedAt = performance.now();
@@ -50,6 +52,7 @@ export function mount(root, ctx, params) {
   let alive = true;
   let confirmResign = false;
   let promo = null; // { from, to }
+  let dropType = null; // reinforcement being placed
 
   // ---------------------------------------------------------------- layout
   const left = h('aside', { class: 'panel battle-side' });
@@ -70,6 +73,7 @@ export function mount(root, ctx, params) {
   const canAct = () => !ended && !thinking && !promo && human[match.turn()];
 
   function select(sq) {
+    dropType = null;
     selected = sq;
     targets = match.legalMovesFrom(sq).map((m) => ({ square: m.to, capture: !!m.captured }));
     paintBoard();
@@ -77,6 +81,11 @@ export function mount(root, ctx, params) {
 
   function clickSquare(sq) {
     if (!canAct()) return;
+    if (dropType) {
+      if (targets.some((t) => t.square === sq)) return reinforce(dropType, sq);
+      dropType = null;
+      targets = [];
+    }
     const piece = match.chess.get(sq);
     if (selected && targets.some((t) => t.square === sq)) return attempt(selected, sq);
     if (piece && piece.color === match.turn() && sq !== selected) return select(sq);
@@ -100,13 +109,41 @@ export function mount(root, ctx, params) {
     play({ from, to });
   }
 
+  function chooseReinforcement(type) {
+    if (!canAct()) return;
+    if (dropType === type) {
+      dropType = null;
+      targets = [];
+    } else {
+      dropType = type;
+      selected = null;
+      targets = match.legalDropSquares(type).map((square) => ({ square, capture: false }));
+    }
+    paintBoard();
+    paintPanels();
+  }
+
+  function reinforce(type, square) {
+    const r = match.drop(type, square);
+    dropType = null;
+    selected = null;
+    targets = [];
+    ctx.recorder.drop({ side: r.color, type, square, cost: r.cost, san: r.san, materialDiff: match.material().diff });
+    ctx.sound.play(r.check ? 'check' : 'buy');
+    afterTurn(r, null);
+  }
+
   function play(move) {
     const r = match.move(move);
     selected = null;
     targets = [];
     ctx.recorder.ply({ san: r.san, materialDiff: match.material().diff });
     ctx.sound.play(r.check ? 'check' : r.captured ? 'capture' : 'move');
-    paintBoard({ from: r.from, to: r.to });
+    afterTurn(r, { from: r.from, to: r.to });
+  }
+
+  function afterTurn(r, animate) {
+    paintBoard(animate);
     paintPanels();
     const status = match.status();
     if (status.over) return finish(status);
@@ -118,7 +155,7 @@ export function mount(root, ctx, params) {
     paintPanels();
     const t0 = performance.now();
     try {
-      const result = await ctx.ai.chooseMove({ startFen, moves: match.historyUci(), preset, seed: randomSeed() });
+      const result = await ctx.ai.chooseMove({ ...match.aiRequest(), preset, seed: randomSeed() });
       const wait = AI_MIN_THINK_MS - (performance.now() - t0);
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       if (!alive || ended) return;
@@ -157,10 +194,12 @@ export function mount(root, ctx, params) {
   // ---------------------------------------------------------------- render
   function paintBoard(animate) {
     board.render(piecesFromBoard(match.board()), animate);
+    board.el.classList.toggle('drop-mode', !!dropType);
     const st = match.status();
     board.highlight({
       selected,
       targets,
+      zone: dropType ? targets.map((t) => t.square) : [],
       lastMove: match.lastMove(),
       check: st.inCheck && st.reason !== 'resign' ? match.kingSquare(match.turn()) : null,
     });
@@ -218,6 +257,44 @@ export function mount(root, ctx, params) {
     );
   }
 
+  /** Reinforcement shop for the human side to move (or the player's side while waiting). */
+  function reinforcements() {
+    const side = hotseat ? match.turn() : 'w';
+    if (!BATTLE_PURCHASES || !human[side]) return null;
+    const gold = match.reserve[side];
+    const myTurn = canAct() && match.turn() === side;
+    const droppable = myTurn ? new Set(match.droppableTypes()) : new Set();
+    return h(
+      'div',
+      { class: `reinforce${dropType ? ' active' : ''}`, dataset: { testid: 'reinforcements' } },
+      h('div', { class: 'reinforce-head' }, h('b', {}, hotseat ? `${SIDE[side]} reserve` : 'War chest'), h('span', { class: 'purse-value small' }, h('i', { class: 'coin sm' }), h('b', { class: 'num' }, gold))),
+      gold > 0
+        ? h(
+            'div',
+            { class: 'reinforce-row' },
+            PIECE_TYPES.map((t) =>
+              h(
+                'button',
+                {
+                  class: `reinforce-btn${dropType === t ? ' on' : ''}`,
+                  type: 'button',
+                  disabled: !droppable.has(t),
+                  'aria-pressed': String(dropType === t),
+                  'aria-label': `Reinforce with a ${PIECE_NAMES[t]} for ${PRICES[t]} gold`,
+                  title: `${PIECE_NAMES[t]} · ${PRICES[t]} gold`,
+                  dataset: { testid: `reinforce-${t}` },
+                  onclick: () => chooseReinforcement(t),
+                },
+                pieceImg(side, t),
+                h('span', { class: 'num' }, PRICES[t]),
+              ),
+            ),
+          )
+        : h('p', { class: 'dim small' }, 'Spent. Keep gold unspent when recruiting to call reinforcements mid-battle.'),
+      dropType ? h('p', { class: 'small reinforce-hint' }, `Place the ${PIECE_NAMES[dropType].toLowerCase()} on a highlighted square — this uses your turn.`) : null,
+    );
+  }
+
   function statusText() {
     const st = match.status();
     if (st.over) {
@@ -234,6 +311,7 @@ export function mount(root, ctx, params) {
       armyCard('b'),
       h('div', { class: `status${thinking ? ' thinking' : ''}`, dataset: { testid: 'battle-status' }, role: 'status' }, statusText()),
       armyCard('w'),
+      reinforcements(),
       h(
         'div',
         { class: 'battle-actions' },

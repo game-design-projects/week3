@@ -4,7 +4,7 @@
 //   free mode : armies come from the draft; deploy only. vs AI the AI deploys
 //               first; hotseat: White deploys, hand-off, Black deploys.
 
-import { CAPS, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
+import { BATTLE_PURCHASES, CAPS, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
 import { armyCost, armyFromPlacement, armyLabel, canBuy, emptyArmy } from '../../core/army.js';
 import { addPieceAuto, autoPlace } from '../../core/autoplace.js';
 import { isAllowedSquare, movePiece, pieceAt, removeAt, validateMatch } from '../../core/placement.js';
@@ -146,9 +146,16 @@ export function mount(root, ctx, params) {
       aiPreset: level ? level.aiPreset : params.aiPreset,
       playerSide: hotseat ? null : 'w',
       budget,
-      white: { army: armyFromPlacement(placements.w), placement: placements.w },
-      black: { army: armyFromPlacement(placements.b), placement: placements.b },
+      white: sideParams('w'),
+      black: sideParams('b'),
     });
+  }
+
+  /** Army + placement + unspent gold (the battle reserve) for one side. */
+  function sideParams(s) {
+    const a = armyFromPlacement(placements[s]);
+    const reserve = level ? (s === 'w' ? budget - armyCost(a) : 0) : budget - armyCost(params.armies[s]);
+    return { army: a, placement: placements[s], reserve: Math.max(0, reserve) };
   }
 
   function continueHandoff() {
@@ -278,10 +285,19 @@ export function mount(root, ctx, params) {
         h('li', {}, 'Deploy in your back two ranks'),
         h('li', {}, 'Pawns on the second rank only'),
         h('li', {}, 'No king may start in check'),
+        BATTLE_PURCHASES ? h('li', {}, 'Unspent gold is your war chest: mid-battle you can spend a turn to drop a new piece into your zone') : null,
       ),
       blocking.length
         ? h('div', { class: 'problems', role: 'alert' }, blocking.map((e) => h('p', {}, e.message)))
-        : h('p', { class: 'ready-note' }, level && mine < budget ? `${budget - mine} gold unspent.` : 'Ready for battle.'),
+        : h(
+            'p',
+            { class: 'ready-note' },
+            mine < budget && BATTLE_PURCHASES
+              ? `Ready — ${budget - mine} gold goes into your war chest for reinforcements.`
+              : mine < budget
+                ? `${budget - mine} gold unspent.`
+                : 'Ready for battle.',
+          ),
       h(
         'button',
         { class: 'btn primary big', type: 'button', disabled: !ready, dataset: { testid: 'start-battle' }, onclick: start },

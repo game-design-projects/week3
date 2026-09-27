@@ -15,6 +15,7 @@ function sideSummary(side) {
     army: { ...side.army },
     label: armyLabel(side.army),
     spend: armyCost(side.army),
+    reserve: side.reserve ?? 0, // unspent gold carried into battle for reinforcements
     placement: side.placement.map((p) => ({ ...p })),
   };
 }
@@ -89,6 +90,7 @@ export function createRecorder({ store, now = () => Date.now() }) {
         pgn: null,
         plies: 0,
         materialTimeline: [],
+        drops: [], // mid-battle purchases: { ply, side, type, square, cost }
         winner: null,
         endReason: null,
         result: null,
@@ -123,6 +125,16 @@ export function createRecorder({ store, now = () => Date.now() }) {
       current.plies += 1;
       current.materialTimeline.push(materialDiff);
       log.debug('ply', current.plies, san);
+    },
+
+    /** A mid-battle purchase (reinforcement drop); also counts as a ply. */
+    drop({ side, type, square, cost, san, materialDiff }) {
+      if (!current) return;
+      current.plies += 1;
+      current.materialTimeline.push(materialDiff);
+      current.drops.push({ ply: current.plies, side, type, square, cost });
+      current.purchases.push({ t: now() - t0, side, action: 'drop', type, ply: current.plies });
+      log.debug('drop', current.plies, san);
     },
 
     end({ winner, reason, pgn, finalFen }) {
