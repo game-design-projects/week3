@@ -16,3 +16,9 @@ test('runSim: one row per gold with consistent counts', () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].wins + rows[0].draws + rows[0].losses, 1);
 });
+
+test('runSim: one row per (gold, enemyGold) cell; the garrison spends its purse', () => {
+  const rows = runSim({ golds: [12], enemyGolds: [0, 5], games: 1, preset: 'easy', playerPreset: 'easy', maxPlies: 16 });
+  assert.deepEqual(rows.map((r) => [r.gold, r.enemyGold]), [[12, 0], [12, 5]]);
+  assert.ok(rows[1].enemyBuys >= 1, 'a garrison with gold buys');
+});

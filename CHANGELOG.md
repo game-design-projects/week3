@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-26
+
+### Changed
+- **Level 1 rebalanced (balance `b5`).** The Keep garrison now has a war chest of its own: **5 gold** to buy reinforcements during the battle (a rook, or a minor piece and pawns), so the enemy shops on the board too instead of only spending capture bounties. The player's purse goes from 12 to **16 gold** to compensate. Chosen from about 900 simulated AI-vs-AI games: a Captain-strength stand-in wins about half the time, Warlord (deeper search) about 90%, Recruit (shallower) far less, so thinking further ahead still pays. See `docs/balance-sim.md`.
+- Levels take an optional `enemyGold` (default 0) in `src/config.js`; the menu line and How to play show it.
+- `pnpm sim` sweeps the garrison's purse too (`--enemy-gold 0,3,5`), reports enemy purchases per game and first buys for both sides, and rejects non-numeric arguments instead of silently simulating `NaN` gold.
+
+### Fixed
+- `pnpm test` works on newer Node versions (test files are passed explicitly instead of a directory).
+
 ## [0.4.0] - 2026-09-26
 
 ### Changed

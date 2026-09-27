@@ -9,11 +9,11 @@ export function kingOnly(side) {
   return [{ type: 'k', square: KING_START[side] }];
 }
 
-/** Level: lone white king with the level's gold vs the fixed enemy garrison. */
+/** Level: lone white king with the level's gold vs the fixed enemy garrison and its purse. */
 export function levelStart(level) {
   return {
     white: { army: emptyArmy(), placement: kingOnly('w'), reserve: level.gold },
-    black: { army: armyFromPlacement(level.enemy), placement: level.enemy.map((p) => ({ ...p })), reserve: 0 },
+    black: { army: armyFromPlacement(level.enemy), placement: level.enemy.map((p) => ({ ...p })), reserve: level.enemyGold ?? 0 },
   };
 }
 

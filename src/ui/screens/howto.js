@@ -13,7 +13,7 @@ export function mount(root, ctx) {
       h(
         'ol',
         { class: 'steps' },
-        h('li', {}, h('b', {}, 'Start with a king and gold. '), `There is no setup phase. In Level 1 you begin with only your king on e1 and ${LEVELS[0].gold} gold, facing a garrison that is already on the board.`),
+        h('li', {}, h('b', {}, 'Start with a king and gold. '), `There is no setup phase. In Level 1 you begin with only your king on e1 and ${LEVELS[0].gold} gold, facing a garrison that is already on the board and has ${LEVELS[0].enemyGold ?? 0} gold of its own to reinforce with.`),
         h('li', {}, h('b', {}, 'Move or buy. '), 'Each turn, either make a normal chess move, or buy one piece and drop it on an empty square of your back two ranks (pawns only on the second rank). Buying uses your turn. Drag a card from your war chest under the board, or click it and then click a gold square.'),
         h('li', {}, h('b', {}, 'Earn by capturing. '), 'Taking an enemy piece pays a bounty into your purse (pawn, knight or bishop 1 g, rook 2 g, queen 4 g).'),
         h('li', {}, h('b', {}, 'Checkmate to win. '), 'Otherwise it is normal chess without castling. A buy can block a check, so you are only mated when no move and no purchase saves the king. Stalemate and repetition are draws.'),

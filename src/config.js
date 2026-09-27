@@ -4,8 +4,8 @@
 // lives here. After changing prices, caps, levels or AI presets, bump
 // BALANCE_VERSION so telemetry from different balance passes can be told apart.
 
-export const APP_VERSION = '0.4.0'; // keep in sync with package.json + CHANGELOG.md
-export const BALANCE_VERSION = 'b4'; // b2 mid-battle shop; b3 bounty + AI shops; b4 no recruit phase — start with a king and gold
+export const APP_VERSION = '0.4.1'; // keep in sync with package.json + CHANGELOG.md
+export const BALANCE_VERSION = 'b5'; // b2 mid-battle shop; b3 bounty + AI shops; b4 no recruit phase — start with a king and gold; b5 L1 16 g vs garrison + 5 g
 
 // Buyable piece types, in display order. The king is free and mandatory.
 export const PIECE_TYPES = ['q', 'r', 'b', 'n', 'p'];
@@ -77,14 +77,16 @@ export const KING_START = { w: 'e1', b: 'e8' };
 
 // Campaign levels. The player starts with a lone king and `gold`; the enemy
 // garrison is fixed and on the board from move one (perfect information — you
-// see exactly what you are buying against).
+// see exactly what you are buying against), and has `enemyGold` of its own to
+// buy reinforcements with during the battle (0 if omitted).
 export const LEVELS = [
   {
     id: 'L1',
     name: 'The Keep',
     blurb:
-      'A small garrison shelters its king behind three pawns. You arrive with only your king and a purse of gold. Buy one piece per turn, drop it into your back ranks, earn more by capturing, and break through to checkmate.',
-    gold: 12,
+      'A small garrison shelters its king behind three pawns, with a war chest of its own for reinforcements. You arrive with only your king and a purse of gold. Buy one piece per turn, drop it into your back ranks, earn more by capturing, and break through to checkmate.',
+    gold: 16,
+    enemyGold: 5, // the garrison can buy a rook, or a minor piece and pawns
     playerSide: 'w',
     aiPreset: 'normal',
     enemy: [

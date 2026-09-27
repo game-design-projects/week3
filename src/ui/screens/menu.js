@@ -1,6 +1,6 @@
 // Title page, laid out like the contents page of a chess book.
 import { APP_VERSION, BALANCE_VERSION, LEVELS, PIECE_NAMES, PRICES } from '../../config.js';
-import { armyCost, armyFromPlacement, armyLabel } from '../../core/army.js';
+import { armyFromPlacement, armyLabel } from '../../core/army.js';
 import { levelStart } from '../../core/start.js';
 import { h, pieceImg } from '../dom.js';
 
@@ -56,7 +56,7 @@ export function mount(root, ctx) {
         h(
           'ol',
           {},
-          entry('I', `Level 1: ${level.name}`, `king + ${level.gold} g vs ${armyLabel(enemyArmy)} (${armyCost(enemyArmy)} g)${finished ? ` · won ${wins} of ${finished}` : ''}`, `menu-level-${level.id}`, () =>
+          entry('I', `Level 1: ${level.name}`, `king + ${level.gold} g vs ${armyLabel(enemyArmy)} + ${level.enemyGold ?? 0} g${finished ? ` · won ${wins} of ${finished}` : ''}`, `menu-level-${level.id}`, () =>
             ctx.go('battle', {
               mode: 'level',
               levelId: level.id,

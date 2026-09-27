@@ -13,7 +13,7 @@ A week-3 prototype for NYU Game Design. There is no setup phase. Each turn you e
 
 | Mode | What happens |
 |---|---|
-| **Level 1 "The Keep"** | Your lone king on e1 with **12 gold** vs a garrison that is already on the board: K g8, R d8, B e7, P f7 g7 h7. Enemy AI plays at *Captain* strength. Buy, fight, earn, and checkmate it. |
+| **Level 1 "The Keep"** | Your lone king on e1 with **16 gold** vs a garrison that is already on the board (K g8, R d8, B e7, P f7 g7 h7) **with 5 gold of its own** to reinforce with. Enemy AI plays at *Captain* strength. Buy, fight, earn, and checkmate it. |
 | **Free battle** | Two lone kings, the same purse each (8 / 12 / 20 / 39). Play the computer (Recruit / Captain / Warlord) or a friend on the same device. |
 | **Demo: AI vs AI** | Two AIs start from lone kings with the same purse and build their armies during the game. The only difference between them is search depth (e.g. Warlord, 4 plies, vs Recruit, 1 ply). It plays itself with a running score, commentary for each move (depth, positions searched, what it bought, mates seen) and an evaluation bar. It shows the strategy ladder directly: thinking further ahead buys and plays better. |
 | **Settings** | Sound, legal-move dots, coordinates, animations, campaign AI strength, and the *capture bounty* house rule (recorded with every session). |
@@ -52,11 +52,11 @@ A good heuristic, per the lecture, applies at every stage, sits between gut feel
 
 Balancing is the hard part, so the prototype ships with two tools for it:
 
-- **Playtest telemetry (in the game).** Each session records: mode, level, AI level, starting gold, attempt number, the house rules in force, both sides' start (placement, gold), every purchase (`drops`: ply, piece, square, cost), what each side bought in total (`bought`), start and final FEN, full PGN (drops written `N@b1`), a per-ply material timeline, and the result and end reason (checkmate, resign, stalemate, threefold, 50-move, insufficient, abandoned). Records carry `balanceVersion` (currently `b4`) so data from different rule sets can be separated.
+- **Playtest telemetry (in the game).** Each session records: mode, level, AI level, starting gold, attempt number, the house rules in force, both sides' start (placement, gold), every purchase (`drops`: ply, piece, square, cost), what each side bought in total (`bought`), start and final FEN, full PGN (drops written `N@b1`), a per-ply material timeline, and the result and end reason (checkmate, resign, stalemate, threefold, 50-move, insufficient, abandoned). Records carry `balanceVersion` (currently `b5`) so data from different rule sets can be separated.
   - **Where it goes:** local-first. Data lives in the browser's localStorage, with nothing sent anywhere. Remote testers (e.g. on itch.io) click **"Download your play data"** on the result screen and send you the JSON; you **Import** it on the Playtest data screen, which dedupes by session id. To collect automatically, set `TELEMETRY.endpoint` in `src/config.js` to a URL that accepts POSTed JSON (sent with `sendBeacon`).
-- **AI-vs-AI simulator:** `pnpm sim -- --gold 10,12,14 --games 10` plays Level 1 with an AI standing in for the player (it shops too) and prints win/draw/loss and first purchases per starting gold. See [docs/balance-sim.md](docs/balance-sim.md).
+- **AI-vs-AI simulator:** `pnpm sim -- --gold 14,16 --enemy-gold 3,5 --games 30` plays Level 1 with an AI standing in for the player (both sides shop) and prints win/draw/loss, enemy purchases and first buys for every (player gold, enemy gold) pair. See [docs/balance-sim.md](docs/balance-sim.md).
 
-**Everything tunable lives in [`src/config.js`](src/config.js):** prices, caps, bounties, drop zones, king start squares, AI presets (search depth, quiescence, randomness window, time cap, how much the AI values unspent gold), the level (gold, enemy garrison, AI preset) and free-battle purses. Bump `BALANCE_VERSION` when you change any of them.
+**Everything tunable lives in [`src/config.js`](src/config.js):** prices, caps, bounties, drop zones, king start squares, AI presets (search depth, quiescence, randomness window, time cap, how much the AI values unspent gold), the level (player gold, enemy garrison and enemy gold, AI preset) and free-battle purses. Bump `BALANCE_VERSION` when you change any of them.
 
 ## Look and feel
 
@@ -88,7 +88,7 @@ pnpm install         # dev deps only (chess.js pin for the vendor check, playwri
 pnpm dev             # http://localhost:5173  (add ?debug=1 for verbose console logs)
 pnpm test            # unit tests (node:test)
 pnpm test:e2e        # drives your installed Google Chrome headlessly; screenshots → e2e/artifacts/
-pnpm sim -- --gold 12 --games 20       # balance simulator (flags documented at the top of tools/simulate.mjs)
+pnpm sim -- --gold 16 --enemy-gold 5 --games 30   # balance simulator (flags documented at the top of tools/simulate.mjs)
 pnpm build           # dist/ = the folder uploaded to itch.io
 ```
 
