@@ -34,14 +34,19 @@ export function summarize(sessions) {
   };
 }
 
-/** One row per army label of `side`, most played first. Only sessions that reached the battle. */
+/**
+ * One row per army of `side`, most played first. The army is what the side
+ * BOUGHT during the battle when known (b4+ rules: everything is bought
+ * mid-battle), else the pre-battle army label (older sessions).
+ */
 export function byArmy(sessions, side = 'w') {
   const key = side === 'w' ? 'white' : 'black';
   const rows = new Map();
   for (const s of sessions) {
-    const label = s[key]?.label;
+    const label = s[key]?.bought ?? s[key]?.label;
     if (!label) continue;
-    const row = rows.get(label) ?? { label, spend: s[key].spend, plays: 0, wins: 0, losses: 0, draws: 0, abandoned: 0, plies: [] };
+    const spend = s[key].boughtSpend ?? s[key].spend;
+    const row = rows.get(label) ?? { label, spend, plays: 0, wins: 0, losses: 0, draws: 0, abandoned: 0, plies: [] };
     row.plays += 1;
     if (s.result === 'win') row.wins += 1;
     else if (s.result === 'loss') row.losses += 1;
@@ -55,13 +60,19 @@ export function byArmy(sessions, side = 'w') {
     .sort((a, b) => b.plays - a.plays || a.label.localeCompare(b.label));
 }
 
+/** Per piece type: how many a side bought on average, and in what share of sessions. */
 export function pieceStats(sessions, side = 'w') {
   const key = side === 'w' ? 'white' : 'black';
-  const withArmy = sessions.filter((s) => s[key]?.army);
+  const counted = sessions.filter((s) => s[key]).map((s) => {
+    if (!Array.isArray(s.drops) || s.white?.bought === undefined) return s[key].army ?? {};
+    const counts = { q: 0, r: 0, b: 0, n: 0, p: 0 };
+    for (const d of s.drops) if (d.side === side) counts[d.type] += 1;
+    return counts;
+  });
   return PIECE_TYPES.map((type) => ({
     type,
-    avgCount: avg(withArmy.map((s) => s[key].army[type] ?? 0)) ?? 0,
-    pickRate: withArmy.length ? withArmy.filter((s) => (s[key].army[type] ?? 0) > 0).length / withArmy.length : 0,
+    avgCount: avg(counted.map((a) => a[type] ?? 0)) ?? 0,
+    pickRate: counted.length ? counted.filter((a) => (a[type] ?? 0) > 0).length / counted.length : 0,
   }));
 }
 
@@ -95,9 +106,10 @@ const CSV_COLUMNS = [
   ['budget', (s) => s.budget],
   ['attempt', (s) => s.attempt],
   ['reusedArmy', (s) => s.reusedArmy],
-  ['battleShop', (s) => s.rules?.battleShop],
   ['captureBounty', (s) => s.rules?.captureBounty],
   ['whiteLabel', (s) => s.white?.label],
+  ['whiteBought', (s) => s.white?.bought],
+  ['blackBought', (s) => s.black?.bought],
   ['whiteSpend', (s) => s.white?.spend],
   ['blackLabel', (s) => s.black?.label],
   ['blackSpend', (s) => s.black?.spend],

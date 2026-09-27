@@ -5,6 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-26
+
+### Changed
+- **No setup phase.** Every game starts straight in the battle: you have a lone king and a purse, and build your army during the fight, one purchase per turn (move *or* buy). Level 1: lone king on e1 with 12 gold vs the Keep garrison already on the board. Balance version `b4`.
+- Free mode is now **Free battle**: two lone kings, the same purse each (8/12/20/39), vs the computer or hotseat. The alternating draft is gone.
+- Demo mode starts from two lone kings with the same purse, so it shows how each AI *spends* as well as how it plays.
+- Result dialog: "Play again" (and "Change purse or opponent" in free battle) replace "Rematch with the same army"/"Change army"; it lists what each side bought and the bounty gold earned.
+- Telemetry: sessions record what each side bought (`white.bought`, `boughtSpend`); the dashboard's army table and "what players buy" use purchases; CSV adds `whiteBought`/`blackBought`. Every battle starts a session (no separate setup screen).
+- In hotseat, only the side to move shows shop cards.
+- Balance simulator rewritten for the new rules (`--gold` sweep, both sides shop); new baseline in `docs/balance-sim.md`.
+
+### Removed
+- The recruit & deploy screen, the free-mode draft screen, the draft AI and the auto-placement heuristic (and their tests).
+- The *buy during the battle* house rule toggle (buying is now the core rule; *capture bounty* remains a setting).
+
 ## [0.3.1] - 2026-09-26
 
 ### Changed

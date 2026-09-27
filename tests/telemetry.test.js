@@ -90,11 +90,15 @@ test('stats: summarize / byArmy / pieceStats / endReasons / learningCurve / filt
   assert.equal(sum.abandoned, 1);
   assert.equal(sum.winRate, 2 / 3);
   assert.equal(sum.avgPlies, 2);
+  // b4 rules: the balance view keys on what was BOUGHT during the battle (nothing here).
   const rows = byArmy(all);
   assert.equal(rows.length, 1);
-  assert.deepEqual([rows[0].label, rows[0].plays, rows[0].wins, rows[0].losses], ['R+B+N+P', 3, 2, 1]);
-  assert.equal(pieceStats(all).find((p) => p.type === 'q').pickRate, 0);
-  assert.equal(pieceStats(all).find((p) => p.type === 'r').pickRate, 1);
+  assert.deepEqual([rows[0].label, rows[0].plays, rows[0].wins, rows[0].losses], ['King only', 3, 2, 1]);
+  assert.equal(pieceStats(all).find((p) => p.type === 'r').pickRate, 0);
+  // Older sessions without a bought label fall back to the pre-battle army.
+  const legacy = all.map((s) => ({ ...s, white: s.white && { ...s.white, bought: undefined } }));
+  assert.equal(byArmy(legacy)[0].label, 'R+B+N+P');
+  assert.equal(pieceStats(legacy).find((p) => p.type === 'r').pickRate, 1);
   assert.deepEqual(endReasons(all), { checkmate: 2, resign: 1, abandoned: 1 });
   assert.deepEqual(learningCurve(all).map((r) => [r.attempt, r.winRate]), [[1, 0], [2, 1], [3, 1]]);
   assert.equal(filterSessions(all, { mode: 'level', levelId: 'L1' }).length, 3);
@@ -114,6 +118,11 @@ test('recorder: reserve carried into battle and drops are recorded as plies', ()
   assert.equal(s.black.reserve, 0);
   assert.equal(s.plies, 3);
   assert.deepEqual(s.drops, [{ ply: 3, side: 'w', type: 'n', square: 'b1', cost: 3 }]);
+  assert.equal(s.white.bought, 'N');
+  assert.equal(s.white.boughtSpend, 3);
+  assert.equal(s.black.bought, 'King only');
+  assert.equal(byArmy([s])[0].label, 'N');
+  assert.equal(pieceStats([s]).find((p) => p.type === 'n').pickRate, 1);
   assert.equal(s.purchases.at(-1).action, 'drop');
   assert.match(toCSV([s]), /w:n@b1#3/);
 });
@@ -123,5 +132,5 @@ test('stats: toCSV escapes quotes, commas and newlines', () => {
   const [header, row] = csv.split('\r\n');
   assert.match(header, /^id,playerId,startedAt,mode/);
   assert.ok(row.startsWith('"a,""b""\nc"') || csv.includes('"a,""b""\nc"'));
-  assert.ok(csv.includes('Q+3P,12'));
+  assert.ok(csv.includes('Q+3P,,,12'), csv);
 });

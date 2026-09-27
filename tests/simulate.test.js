@@ -1,20 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runSim, simulateGame } from '../tools/simulate.mjs';
+import { freeStart } from '../src/core/start.js';
 import { AI_PRESETS } from '../src/config.js';
 
-test('simulateGame ends by rule or by the ply cap', () => {
-  const white = { army: {}, placement: [{ type: 'k', square: 'e1' }, { type: 'q', square: 'd1' }] };
-  const black = { army: {}, placement: [{ type: 'k', square: 'e8' }] };
-  const r = simulateGame({ white, black, whitePreset: AI_PRESETS.normal, blackPreset: AI_PRESETS.easy, maxPlies: 80 });
-  assert.equal(r.winner, 'w');
-  assert.equal(r.reason, 'checkmate');
+test('simulateGame: two lone kings with gold — both sides buy, game ends by rule or cap', () => {
+  const r = simulateGame({ ...freeStart(12), whitePreset: AI_PRESETS.easy, blackPreset: AI_PRESETS.easy, maxPlies: 24 });
+  assert.ok(r.drops.some((d) => d.color === 'w'), 'white bought something');
+  assert.ok(r.drops.some((d) => d.color === 'b'), 'black bought something');
+  assert.ok(r.plies <= 24);
 });
 
-test('runSim returns one row per army with consistent counts', () => {
-  const rows = runSim({ armies: [{ q: 1, r: 0, b: 0, n: 0, p: 3 }], games: 1, preset: 'easy', playerPreset: 'easy', maxPlies: 20 });
+test('runSim: one row per gold with consistent counts', () => {
+  const rows = runSim({ golds: [12], games: 1, preset: 'easy', playerPreset: 'easy', maxPlies: 16 });
   assert.equal(rows.length, 1);
-  const [r] = rows;
-  assert.equal(r.label, 'Q+3P');
-  assert.equal(r.wins + r.draws + r.losses, 1);
+  assert.equal(rows[0].wins + rows[0].draws + rows[0].losses, 1);
 });

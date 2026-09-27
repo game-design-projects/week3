@@ -1,5 +1,5 @@
 // Player settings, persisted per browser (localStorage, guarded).
-// Rule settings (battleShop, captureBounty) change the game and are recorded
+// Rule settings (captureBounty) change the game and are recorded
 // with every telemetry session so data from different rules can be separated.
 
 import { AI_PRESETS, DEFAULT_SETTINGS } from './config.js';
@@ -60,7 +60,7 @@ export function createSettings({ storage } = {}) {
     },
     /** The rule subset recorded in telemetry and passed to Match. */
     rules() {
-      return { battleShop: values.battleShop, captureBounty: values.captureBounty };
+      return { captureBounty: values.captureBounty };
     },
   };
 }

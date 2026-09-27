@@ -2,8 +2,9 @@
 //   level / free : human(s) vs AI or hotseat; every ply is recorded to telemetry.
 //   demo         : AI vs AI, with a commentary column and an evaluation bar, and
 //                  auto-continues a series (not recorded — it isn't a playtest).
-// The shop: on your turn you may buy a piece with your gold (unspent recruit
-// money + capture bounties) and drop it into your zone instead of moving.
+// The shop is the game: each side starts with its king and a purse, and on its
+// turn either moves or buys one piece and drops it into its back two ranks.
+// Captures pay a bounty (house rule, on by default).
 
 import { AI_MIN_THINK_MS, AI_PRESETS, LEVELS, PIECE_NAMES, PIECE_TYPES, PRICES } from '../../config.js';
 import { armyLabel } from '../../core/army.js';
@@ -35,24 +36,21 @@ export function mount(root, ctx, params) {
   const rules = params.rules ?? ctx.settings.rules();
   const rec = demo ? NO_RECORD : ctx.recorder;
 
-  if (params.reusedArmy) {
-    rec.begin({
-      mode: params.mode,
-      levelId: params.levelId ?? null,
-      opponent: params.opponent,
-      aiPreset: params.aiPreset ?? null,
-      budget: params.budget,
-      playerSide: params.playerSide,
-      reusedArmy: true,
-      rules,
-    });
-  }
+  rec.begin({
+    mode: params.mode,
+    levelId: params.levelId ?? null,
+    opponent: params.opponent,
+    aiPreset: params.aiPreset ?? null,
+    budget: params.gold, // starting gold
+    playerSide: params.playerSide,
+    reusedArmy: !!params.rematch,
+    rules,
+  });
   const startFen = buildFen(params.white.placement, params.black.placement);
-  const reserveOf = (side) => (rules.battleShop ? params[side === 'w' ? 'white' : 'black'].reserve ?? 0 : 0);
   const match = new Match({
     startFen,
-    reserve: { w: reserveOf('w'), b: reserveOf('b') },
-    rules: { shop: rules.battleShop, ...(rules.captureBounty ? {} : { bounty: null }) },
+    reserve: { w: params.white.reserve ?? 0, b: params.black.reserve ?? 0 },
+    rules: rules.captureBounty ? {} : { bounty: null },
   });
   rec.startBattle({ white: params.white, black: params.black, startFen });
   window.__cbs.match = match;
@@ -205,7 +203,7 @@ export function mount(root, ctx, params) {
         ...match.aiRequest(),
         preset,
         seed: randomSeed(),
-        shop: rules.battleShop && match.reserve[side] > 0 ? { reserve: match.reserve[side] } : null,
+        shop: match.reserve[side] > 0 ? { reserve: match.reserve[side] } : null,
       });
       const wait = minThink - (performance.now() - t0);
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -330,6 +328,16 @@ export function mount(root, ctx, params) {
     );
   }
 
+  /** "Garrison R+B+3P · bought N" / "Bought Q+2P" / "King only, 12 g to spend". */
+  function onBoardLabel(side, p) {
+    const counts = { q: 0, r: 0, b: 0, n: 0, p: 0 };
+    for (const b of bought[side]) counts[b.type] += 1;
+    const start = armyLabel(p.army);
+    const buys = bought[side].length ? armyLabel(counts) : null;
+    if (start !== 'King only') return buys ? `Garrison ${start} · bought ${buys}` : `Garrison ${start}`;
+    return buys ? `Bought ${buys}` : 'King only so far';
+  }
+
   function sideBlock(side) {
     const p = side === 'w' ? params.white : params.black;
     const who = demo ? `${SIDE[side]} · ${presetOf(side).label}` : hotseat ? SIDE[side] : side === 'w' ? 'You · White' : `Enemy · ${presetOf('b').label}`;
@@ -341,7 +349,7 @@ export function mount(root, ctx, params) {
       'div',
       { class: `side-block ${side === 'w' ? 'ally' : 'enemy'}${toMove ? ' to-move' : ''}` },
       h('div', { class: 'side-head' }, h('span', { class: 'side-name' }, who), lead > 0 ? h('span', { class: 'lead num' }, `+${lead}`) : null),
-      h('div', { class: 'side-meta' }, h('span', {}, `Recruited ${armyLabel(p.army)}`)),
+      h('div', { class: 'side-meta' }, h('span', {}, onBoardLabel(side, p))),
       caps.length ? h('div', { class: 'captures' }, caps.map((t) => pieceImg(side === 'w' ? 'b' : 'w', t, 'cap'))) : null,
     );
   }
@@ -394,7 +402,8 @@ export function mount(root, ctx, params) {
       h('span', { class: `bank-gold num${myTurn && gold > 0 ? ' ready' : ''}` }, h('i', { class: 'coin' }), `${gold}`, h('small', {}, ' g')),
       h('span', { class: 'bank-log' }, earned ? `+${earned} g from captures` : rules.captureBounty ? 'captures pay gold' : '', bought[side].length ? ` · bought ${bought[side].map((b) => `${b.type.toUpperCase()}@${b.square}`).join(' ')}` : ''),
     );
-    if (!rules.battleShop || !isHuman || demo) return [head];
+    // Cards only for a human side — and in hotseat only for the side to move.
+    if (!isHuman || demo || (hotseat && match.turn() !== side)) return [head];
     const droppable = myTurn ? new Set(match.droppableTypes()) : new Set();
     const cards = PIECE_TYPES.map((t) =>
       h(
@@ -433,7 +442,7 @@ export function mount(root, ctx, params) {
     }
     if (thinking) return demo ? `${SIDE[st.turn]} is thinking…` : 'Enemy is thinking…';
     const who = hotseat ? `${SIDE[st.turn]} to move` : 'Your move';
-    const canShop = rules.battleShop && match.droppableTypes().length > 0;
+    const canShop = match.droppableTypes().length > 0;
     const verb = canShop ? `${who}: move or buy` : who;
     return st.inCheck ? `${verb}. Check!` : verb;
   }
@@ -491,7 +500,7 @@ export function mount(root, ctx, params) {
         h(
           'p',
           { class: 'fine' },
-          `Both sides get the same army. ${presetOf('w').label} looks ${presetOf('w').depth} ply ahead and ${presetOf('b').label} looks ${presetOf('b').depth}. The running score shows how much the extra thinking is worth.`,
+          `Both start with a lone king and ${params.gold} gold, and build their armies as they go. ${presetOf('w').label} looks ${presetOf('w').depth} ply ahead and ${presetOf('b').label} looks ${presetOf('b').depth}. The running score shows how much the extra thinking is worth.`,
         ),
         h(
           'table',
@@ -520,8 +529,7 @@ export function mount(root, ctx, params) {
     const draw = status.winner === null;
     const title = hotseat ? (draw ? 'Draw' : `${SIDE[status.winner]} wins`) : draw ? 'Draw' : win ? 'Victory' : 'Defeat';
     const ms = performance.now() - startedAt;
-    const again = () => ctx.go('battle', { ...params, reusedArmy: true });
-    const change = () => (params.mode === 'level' ? ctx.go('setup', { mode: 'level', levelId: params.levelId }) : ctx.go('draft', {}));
+    const again = () => ctx.go('battle', { ...params, rematch: true });
     const drops = match.drops();
     modal.hidden = false;
     fill(
@@ -538,18 +546,19 @@ export function mount(root, ctx, params) {
           h('dd', { class: 'num' }, Math.ceil(match.plies() / 2)),
           h('dt', {}, 'Time'),
           h('dd', { class: 'num' }, formatDuration(ms)),
-          h('dt', {}, hotseat ? 'White' : 'Your army'),
-          h('dd', {}, armyLabel(params.white.army)),
-          h('dt', {}, hotseat ? 'Black' : 'Enemy'),
-          h('dd', {}, armyLabel(params.black.army)),
-          drops.length ? [h('dt', {}, 'Bought mid-battle'), h('dd', { class: 'num' }, drops.map((d) => `${d.type.toUpperCase()}@${d.square}`).join(' '))] : null,
+          h('dt', {}, hotseat ? 'White bought' : 'You bought'),
+          h('dd', { class: 'num' }, drops.filter((d) => d.color === 'w').map((d) => `${d.type.toUpperCase()}@${d.square}`).join(' ') || 'nothing'),
+          h('dt', {}, hotseat ? 'Black bought' : 'Enemy bought'),
+          h('dd', { class: 'num' }, drops.filter((d) => d.color === 'b').map((d) => `${d.type.toUpperCase()}@${d.square}`).join(' ') || 'nothing'),
+          h('dt', {}, 'Gold earned'),
+          h('dd', { class: 'num' }, `${match.earned().w} g / ${match.earned().b} g`),
           s?.attempt ? [h('dt', {}, 'Attempt'), h('dd', { class: 'num' }, `#${s.attempt}`)] : null,
         ),
         h(
           'div',
           { class: 'actions column' },
-          h('button', { class: 'btn primary', type: 'button', dataset: { testid: 'result-rematch' }, onclick: again }, 'Rematch with the same army'),
-          h('button', { class: 'btn', type: 'button', dataset: { testid: 'result-change-army' }, onclick: change }, params.mode === 'level' ? 'Change army' : 'New draft'),
+          h('button', { class: 'btn primary', type: 'button', dataset: { testid: 'result-rematch' }, onclick: again }, 'Play again'),
+          params.mode === 'free' ? h('button', { class: 'btn', type: 'button', dataset: { testid: 'result-change' }, onclick: () => ctx.go('free', {}) }, 'Change purse or opponent') : null,
           h('button', { class: 'btn quiet', type: 'button', dataset: { testid: 'result-menu' }, onclick: () => ctx.go('menu') }, 'Menu'),
         ),
         h(

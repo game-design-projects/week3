@@ -63,7 +63,6 @@ export function mount(root, ctx) {
       toggle('animations', 'Animations', 'Pieces slide when they move.'),
       h('h2', { class: 'rule-head' }, 'House rules'),
       h('p', { class: 'fine' }, 'These change the game, so every recorded session notes which rules were on.'),
-      toggle('battleShop', 'Buy during the battle', 'On your turn, spend gold to put a new piece into your back two ranks instead of moving.'),
       toggle('captureBounty', 'Capture bounty', `Capturing an enemy piece earns gold: ${bounty}.`),
       h(
         'div',

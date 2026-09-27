@@ -4,7 +4,7 @@ import { chooseMove } from '../src/ai/search.js';
 import { createAIClient } from '../src/ai/client.js';
 import { AI_PRESETS, LEVELS } from '../src/config.js';
 import { Chess } from '../vendor/chess.js';
-import { autoPlace } from '../src/core/autoplace.js';
+import { levelStart } from '../src/core/start.js';
 import { buildFen } from '../src/core/placement.js';
 import { createRng } from '../src/lib/rng.js';
 
@@ -52,8 +52,10 @@ test('search: takes a hanging queen and does not hang its own (normal)', () => {
 
 test('search: always legal over random Level 1 games; throws on finished games', () => {
   const rng = createRng(42);
+  // White: a few pieces as if bought early (b4 rules start from a lone king).
+  const white = [{ type: 'k', square: 'e1' }, { type: 'r', square: 'a1' }, { type: 'b', square: 'c1' }, { type: 'n', square: 'g1' }, { type: 'p', square: 'e2' }];
+  assert.ok(levelStart(LEVELS[0]).white.reserve > 0);
   for (let g = 0; g < 12; g++) {
-    const white = autoPlace('w', { q: 0, r: 1, b: 1, n: 1, p: 1 }, { rng, opponent: LEVELS[0].enemy });
     const start = buildFen(white, LEVELS[0].enemy);
     const c = new Chess(start);
     const moves = [];

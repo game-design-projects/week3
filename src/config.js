@@ -4,8 +4,8 @@
 // lives here. After changing prices, caps, levels or AI presets, bump
 // BALANCE_VERSION so telemetry from different balance passes can be told apart.
 
-export const APP_VERSION = '0.3.1'; // keep in sync with package.json + CHANGELOG.md
-export const BALANCE_VERSION = 'b3'; // b2: mid-battle purchases; b3: capture bounty + AI shops too
+export const APP_VERSION = '0.4.0'; // keep in sync with package.json + CHANGELOG.md
+export const BALANCE_VERSION = 'b4'; // b2 mid-battle shop; b3 bounty + AI shops; b4 no recruit phase — start with a king and gold
 
 // Buyable piece types, in display order. The king is free and mandatory.
 export const PIECE_TYPES = ['q', 'r', 'b', 'n', 'p'];
@@ -26,11 +26,12 @@ export const PRICES = { q: 9, r: 5, b: 3, n: 3, p: 1 };
 // Stops queen spam in free mode and bounds army size (15 + king = 16 squares).
 export const CAPS = { q: 1, r: 2, b: 2, n: 2, p: 8 };
 
-// Mid-battle purchases ("the shop"): gold left unspent after recruiting is
-// kept, and capturing enemy pieces earns more (CAPTURE_BOUNTY). On your turn
-// you may, instead of moving, buy a piece and drop it on an empty square of
-// your deployment zone (same ZONES as below). Both rules can be switched off
-// by players in Settings; sessions record which rules were in force.
+// The shop: there is no recruiting phase. Each side starts with its king (and,
+// in a level, the enemy starts with its garrison) plus a purse of gold. On
+// your turn you either move or buy ONE piece and drop it on an empty square
+// of your deployment zone (ZONES below). Capturing enemy pieces earns more
+// gold (CAPTURE_BOUNTY). Players can switch the bounty off in Settings;
+// sessions record which rules were in force.
 export const CAPTURE_BOUNTY = { p: 1, n: 1, b: 1, r: 2, q: 4 };
 
 // Gold held in reserve is worth this many centipawns per gold to the AI when it
@@ -45,11 +46,10 @@ export const DEFAULT_SETTINGS = {
   showCoords: true,
   animations: true,
   campaignAI: 'normal', // AI preset for campaign levels
-  battleShop: true, // rule: buy + drop pieces during the battle
   captureBounty: true, // rule: earn CAPTURE_BOUNTY gold for captures
 };
 
-// Where each side may place pieces before the battle (ranks are 1..8).
+// Where each side may drop bought pieces (ranks are 1..8).
 // Non-pawns may use any rank in `ranks`; pawns only `pawnRanks`.
 export const ZONES = {
   w: { ranks: [1, 2], pawnRanks: [2] },
@@ -72,16 +72,19 @@ export const AI_PRESETS = {
 // Minimum time the UI waits before showing an AI move, so replies don't feel instant.
 export const AI_MIN_THINK_MS = 450;
 
-// Campaign levels. The enemy army is fixed and shown to the player during the
-// buy phase (perfect information — a deliberate design choice so that thinking
-// harder about the matchup pays off).
+// Where the kings start when a side has no fixed army.
+export const KING_START = { w: 'e1', b: 'e8' };
+
+// Campaign levels. The player starts with a lone king and `gold`; the enemy
+// garrison is fixed and on the board from move one (perfect information — you
+// see exactly what you are buying against).
 export const LEVELS = [
   {
     id: 'L1',
     name: 'The Keep',
     blurb:
-      'A small garrison shelters its king behind three pawns. Hire an army with 12 gold, keep some back or earn more by capturing, and buy reinforcements mid-battle until you deliver checkmate.',
-    budget: 12,
+      'A small garrison shelters its king behind three pawns. You arrive with only your king and a purse of gold. Buy one piece per turn, drop it into your back ranks, earn more by capturing, and break through to checkmate.',
+    gold: 12,
     playerSide: 'w',
     aiPreset: 'normal',
     enemy: [
@@ -95,12 +98,10 @@ export const LEVELS = [
   },
 ];
 
-// Free mode: both sides draft an army from the same budget, one piece at a time.
+// Free mode: both sides start with a king and the same purse.
 export const FREE_MODE = {
-  budgets: [8, 12, 20, 39],
-  defaultBudget: 20,
-  // Black drafts first to offset White moving first in the battle.
-  draftFirst: 'b',
+  golds: [8, 12, 20, 39],
+  defaultGold: 20,
 };
 
 export const TELEMETRY = {

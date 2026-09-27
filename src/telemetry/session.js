@@ -74,7 +74,7 @@ export function createRecorder({ store, now = () => Date.now() }) {
         playerSide,
         attempt: previous + 1,
         reusedArmy,
-        rules, // e.g. { battleShop: true, captureBounty: true } — the rule settings in force
+        rules, // e.g. { captureBounty: true } — the house rules in force
         startedAt: iso(t0),
         battleStartedAt: null,
         endedAt: null,
@@ -140,6 +140,14 @@ export function createRecorder({ store, now = () => Date.now() }) {
 
     end({ winner, reason, pgn, finalFen }) {
       if (!current) return null;
+      // What each side bought during the battle, as an army label (the balance view keys on this).
+      for (const [side, key] of [['w', 'white'], ['b', 'black']]) {
+        if (!current[key]) continue;
+        const counts = { q: 0, r: 0, b: 0, n: 0, p: 0 };
+        for (const d of current.drops) if (d.side === side) counts[d.type] += 1;
+        current[key].bought = armyLabel(counts);
+        current[key].boughtSpend = armyCost(counts);
+      }
       return finish({
         winner: winner ?? null,
         endReason: reason,

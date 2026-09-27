@@ -1,58 +1,36 @@
-# Level 1 balance baseline (AI vs AI)
+# Level 1 balance (AI vs AI), rules `b4`
 
-> **This is simulated, not human, data.** An AI (the *Captain* preset, depth 2) stands in for the player, so read it as a first rough guess to check against real playtest telemetry, not as a verdict.
+> **This is simulated, not human, data.** An AI (the *Captain* preset, 2-ply search) plays the player's side and shops by the same rules, so read these numbers as a rough starting point to check against real playtest telemetry.
 
-> **Rules version:** recorded under balance `b1`. The simulated player always spends its gold before the battle and never calls reinforcements, so this baseline doesn't cover the `b2` war-chest mechanic. Human telemetry (which records `reserve` and `drops`) is the way to judge that.
-
-**Setup:** Level 1 "The Keep" (12 gold vs K g8, R d8, B e7, P f7 g7 h7), balance version `b1`. Enemy AI `normal` (Captain), player AI `normal`. Every army that spends 11–12 gold (31 armies), 4 games each with different auto-placements and seeds. Games were capped at 160 plies; a game that hit the cap counts as a draw.
+**Rules `b4`:** no setup phase. White starts with a lone king on e1 and *N* gold. Black is the Keep garrison (K g8, R d8, B e7, P f7 g7 h7) with 0 gold, and earns only through capture bounties. Each turn a side moves or buys one piece into its back two ranks. Enemy AI `normal`, player AI `normal`, games capped at 160 plies (a game that hits the cap counts as a draw).
 
 ```bash
-pnpm sim -- --games 4 --min-spend 11          # reproduce (≈4 min on an M-series Mac)
-pnpm sim -- --armies "Q+3P,2R+2P" --games 20  # dig into specific armies
+pnpm sim -- --gold 10,12,14,16 --games 6
+pnpm sim -- --gold 12 --games 20
 ```
 
-**Totals:** 124 games. White (the player side) won 48 (39%), drew 47 (38%), lost 29 (23%). Endings: 77 checkmates, 40 hit the ply cap, 4 insufficient material, 3 by the fifty-move rule.
+## Starting gold sweep (6 games each)
 
 ```
-army            gold  games   W   D   L   win%  avg plies
-Q+B               12      4   3   0   1    75%         48
-Q+3P              12      4   3   0   1    75%         58
-R+7P              12      4   3   1   0    75%        101
-R+6P              11      4   3   1   0    75%        115
-R+2N              11      4   2   1   1    50%         45
-R+2B+P            12      4   2   0   2    50%         89
-2R+P              11      4   2   2   0    50%         89
-R+B+4P            12      4   2   0   2    50%         94
-2R+2P             12      4   2   2   0    50%         94
-2B+N+2P           11      4   2   1   1    50%         95
-2B+N+3P           12      4   2   1   1    50%         95
-2N+6P             12      4   2   2   0    50%        111
-R+B+N             11      4   2   1   1    50%        114
-R+N+3P            11      4   2   1   1    50%        120
-B+8P              11      4   2   1   1    50%        121
-R+N+4P            12      4   2   1   1    50%        123
-R+2B              11      4   2   1   1    50%        125
-2B+5P             11      4   2   2   0    50%        135
-R+2N+P            12      4   1   2   1    25%        114
-2N+5P             11      4   1   1   2    25%        116
-R+B+3P            11      4   1   2   1    25%        120
-R+B+N+P           12      4   1   2   1    25%        122
-2B+6P             12      4   1   2   1    25%        126
-N+8P              11      4   1   2   1    25%        131
-B+N+6P            12      4   1   3   0    25%        143
-B+2N+2P           11      4   1   3   0    25%        146
-Q+2P              11      4   0   1   3     0%         99
-B+2N+3P           12      4   0   2   2     0%        127
-2B+2N             12      4   0   3   1     0%        140
-B+N+5P            11      4   0   3   1     0%        144
-Q+N               12      4   0   3   1     0%        154
+gold  games   W   D   L   win%  avg plies  first buy
+  10      6   2   1   3    33%        123  Q×6
+  12      6   5   0   1    83%         49  Q×6
+  14      6   2   2   2    33%         85  Q×6
+  16      6   3   1   2    50%         69  Q×6
 ```
+
+## Chosen value: 12 gold (20 games)
+
+```
+gold  games   W   D   L   win%  avg plies  first buy
+  12     20  13   4   3    65%         91  Q×20
+```
+
+End reasons at 12 gold: 16 checkmates, 4 hit the ply cap.
 
 ## Observations
 
-- **No single dominant army.** The best results are 3/4 wins (Q+B, Q+3P, R+7P, R+6P), and with n=4 per army the ±25-point swings are mostly noise. Rerun the leaders with `--games 20` before changing prices.
-- **The queen is all-or-nothing.** Q+3P and Q+B win quickly (≈50 plies), but Q+2P and Q+N went 0/4. Without a pawn shield or a second attacker, the queen alone doesn't convert against R+B. That matches heuristic #5 in the README (quantity vs quality).
-- **Minor-piece armies stall.** 2B+2N, B+N+5P and B+2N+2P draw a lot, often at the ply cap. With a shallow search they can't organise a mate, and a human with a plan should do better. That makes "can this army actually mate?" a real heuristic, not just flavour.
-- **Pawn-heavy rook armies do well but slowly** (R+7P, R+6P: 75%, 100+ plies). Promotion is their plan.
-- **For a Captain-strength stand-in, the level is winnable but not free** (39% win, 23% loss). A thoughtful human should sit higher, which is the target for a first level. Human telemetry decides from here.
-- **Levers if humans find it too easy or too hard:** budget (11–13), the enemy AI preset (`easy` / `hard`), or the enemy layout (e.g. move the rook off d8 to weaken the back-rank defence). All are in `src/config.js`. Bump `BALANCE_VERSION` when you change them.
+- **12 gold gives a winnable but not free first level** for a Captain-strength stand-in: 65% win, 20% draw, 15% loss over 20 games. The 6-game sweep is too noisy to rank 10/14/16 gold (the win rate is not even monotonic in gold), so treat 12 as a starting point for human playtests, not a proven optimum.
+- **The simulated player always buys the queen first.** This is the AI's greedy valuation (a 9-gold queen immediately creates threats), not proof that it's right for humans. Whether players discover "threat first, shield second", or get punished for a lone queen, is exactly what the per-purchase telemetry (`drops`, `bought`) should show.
+- **Known AI limitation:** the search does not consider the *opponent's* possible purchases. It can leave a piece where a freshly bought enemy rook could take it next turn. The deeper preset still wins the demo series more often, but a human who uses drops tactically can exploit this. Levers if the AI feels too naive: model the opponent's best drop at the first reply ply (costly), or add a small "hanging to a drop" penalty to the evaluation.
+- **Levers:** `LEVELS[0].gold`, the enemy AI preset, `CAPTURE_BOUNTY` (bigger bounties make trades snowball faster), `AI_GOLD_VALUE_CP` (how eagerly the AI spends), all in `src/config.js`. Bump `BALANCE_VERSION` when you change any of them.

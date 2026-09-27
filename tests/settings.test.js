@@ -26,8 +26,8 @@ test('settings: sanitize drops junk, wrong types and unknown presets; survives c
   storage.setItem(SETTINGS_KEY, '{not json');
   assert.deepEqual(createSettings({ storage }).get(), DEFAULT_SETTINGS);
   const blocked = createSettings({ storage: null });
-  assert.equal(blocked.set({ battleShop: false }).battleShop, false);
-  assert.deepEqual(blocked.rules(), { battleShop: false, captureBounty: true });
+  assert.equal(blocked.set({ captureBounty: false }).captureBounty, false);
+  assert.deepEqual(blocked.rules(), { captureBounty: false });
 });
 
 test('settings: onChange listeners fire', () => {

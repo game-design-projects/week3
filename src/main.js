@@ -10,16 +10,15 @@ import { createRecorder } from './telemetry/session.js';
 import { createSettings } from './settings.js';
 import { createSound } from './ui/sound.js';
 import * as menu from './ui/screens/menu.js';
-import * as setup from './ui/screens/setup.js';
 import * as battle from './ui/screens/battle.js';
-import * as draft from './ui/screens/draft.js';
+import * as free from './ui/screens/free.js';
 import * as dashboard from './ui/screens/dashboard.js';
 import * as howto from './ui/screens/howto.js';
 import * as demo from './ui/screens/demo.js';
 import * as settingsScreen from './ui/screens/settings.js';
 
 const log = createLogger('app');
-const SCREENS = { menu, setup, battle, draft, dashboard, howto, demo, settings: settingsScreen };
+const SCREENS = { menu, battle, free, dashboard, howto, demo, settings: settingsScreen };
 
 const root = document.getElementById('screen');
 const toastEl = document.getElementById('toast');
