@@ -29,13 +29,30 @@ after(async () => {
   await new Promise((r) => server.close(r));
 });
 
-// Every fresh browser context starts with telemetryConsent 'unset', so the
-// consent card is up over the menu. Default to declining so the rest of the
-// suite (written before consent existed) sees the menu as before; pass
-// `consent: 'accept'` to opt in, or `consent: 'none'` to leave the card up
+// The shipped config has no collector (COLLECTOR = null in src/config.js: the
+// Worker was deleted), so telemetry and the leaderboard are hidden. Most tests
+// here exercise those features against intercepted requests, so by default
+// `open()` patches that one line to point at the old origin; pass
+// `backend: false` to see the build exactly as shipped.
+const COLLECTOR_OFF = 'const COLLECTOR = null;';
+const COLLECTOR_MOCK = "const COLLECTOR = 'https://chass-telemetry.lishuyustevenli.workers.dev';";
+
+// With a backend, every fresh browser context starts with telemetryConsent
+// 'unset', so the consent card is up over the menu. Default to declining so the
+// rest of the suite (written before consent existed) sees the menu as before;
+// pass `consent: 'accept'` to opt in, or `consent: 'none'` to leave the card up
 // for a test that wants to interact with it itself.
-async function open(viewport = { width: 1280, height: 720 }, { consent = 'decline' } = {}) {
+async function open(viewport = { width: 1280, height: 720 }, { consent = 'decline', backend = true } = {}) {
   const context = await browser.newContext({ viewport, acceptDownloads: true });
+  if (backend) {
+    await context.route('**/src/config.js', async (route) => {
+      const res = await route.fetch();
+      const text = await res.text();
+      assert.ok(text.includes(COLLECTOR_OFF), 'src/config.js no longer has the COLLECTOR line the e2e suite patches');
+      const body = text.replace(COLLECTOR_OFF, COLLECTOR_MOCK);
+      await route.fulfill({ response: res, body, headers: { ...res.headers(), 'content-length': String(Buffer.byteLength(body)) } });
+    });
+  }
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -44,8 +61,8 @@ async function open(viewport = { width: 1280, height: 720 }, { consent = 'declin
   });
   await page.goto(base);
   await page.waitForSelector('[data-testid="menu-level-L1"]');
-  if (consent === 'decline') await page.click(tid('consent-decline'));
-  else if (consent === 'accept') await page.click(tid('consent-accept'));
+  if (backend && consent === 'decline') await page.click(tid('consent-decline'));
+  else if (backend && consent === 'accept') await page.click(tid('consent-accept'));
   return { context, page, errors };
 }
 
@@ -624,6 +641,40 @@ test('level 1 win: the result card offers the leaderboard; nothing is sent until
   assert.equal(await page.inputValue(tid('lb-nickname')), 'e2e bot');
   assert.equal(posts.length, 1, 'still nothing sent without a click');
   assert.deepEqual(errors.filter((e) => !/ERR_INTERNET_DISCONNECTED|Failed to load resource/.test(e)), []);
+  await context.close();
+});
+
+test('no collector (as shipped): no consent card, no leaderboard entry, no Privacy switch, no result-card form, nothing leaves the page', async () => {
+  const { context, page, errors } = await open({ width: 1280, height: 720 }, { backend: false });
+  const outbound = [];
+  page.on('request', (r) => /workers\.dev|\/v1\//.test(r.url()) && outbound.push(r.url()));
+  assert.equal(await page.isHidden('#consent-overlay'), true, 'no consent card');
+  assert.equal(await page.$(tid('consent-accept')), null);
+  assert.equal(await page.$(tid('menu-leaderboard')), null, 'no leaderboard entry');
+  assert.deepEqual(await page.$$eval('.toc-n', (els) => els.map((e) => e.textContent)), ['I', 'II', 'III', 'IV', 'V', 'VI'], 'numerals leave no gap');
+  await page.screenshot({ path: `${ART}menu-no-collector-1280.png` });
+  assert.deepEqual(await noPageScroll(page), { v: true, h: true }, 'menu fits 1280x720');
+
+  await page.click(tid('menu-settings'));
+  await page.waitForSelector(tid('setting-captureBounty'));
+  assert.equal(await page.$(tid('setting-telemetryConsent')), null, 'no Privacy switch');
+  await page.click(tid('nav-menu'));
+  await page.click(tid('menu-dashboard'));
+  await page.waitForSelector('.dash-head');
+  assert.equal(await page.$(tid('dash-consent-note')), null, 'no sharing note');
+  await page.click(tid('nav-menu'));
+
+  // a clean Level 1 win still ends normally, just without the leaderboard block
+  await page.click(tid('menu-level-L1'));
+  await page.waitForSelector(tid('reinforce-q'));
+  await scriptAI(page, WIN_7.filter((_, i) => i % 2 === 1));
+  await playWhite(page, WIN_7);
+  await page.waitForSelector(tid('result-modal'), { timeout: 6000 });
+  assert.deepEqual(await page.evaluate(() => [window.__cbs.match.status().reason, window.__cbs.match.status().winner]), ['checkmate', 'w']);
+  assert.equal(await page.$(tid('lb-section')), null, 'no leaderboard block after a win');
+  assert.equal(await page.$(tid('lb-house-rules')), null);
+  assert.deepEqual(outbound, [], 'no request to a collector');
+  assert.deepEqual(errors, []);
   await context.close();
 });
 

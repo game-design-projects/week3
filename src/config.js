@@ -4,7 +4,7 @@
 // lives here. After changing prices, caps, levels or AI presets, bump
 // BALANCE_VERSION so telemetry from different balance passes can be told apart.
 
-export const APP_VERSION = '0.6.0'; // keep in sync with package.json + CHANGELOG.md
+export const APP_VERSION = '0.6.1'; // keep in sync with package.json + CHANGELOG.md
 export const BALANCE_VERSION = 'b5'; // b2 mid-battle shop; b3 bounty + AI shops; b4 no recruit phase — start with a king and gold; b5 L1 16 g vs garrison + 5 g
 
 // Buyable piece types, in display order. The king is free and mandatory.
@@ -137,22 +137,30 @@ export const FEEL = {
 };
 export const MATE_VALUE = 12;
 
+// Origin of the collector Worker (Cloudflare Worker + D1, server/telemetry/).
+// It was deleted on 2026-10-06 (the D1 database was left in place), so the game
+// ships without one: null = local only. To bring it back, redeploy the Worker
+// from server/telemetry/, set this to its workers.dev origin and update
+// tests/online.test.js. Everything online hangs off this (see
+// src/online.js); e2e/smoke.test.mjs patches this exact line to run with a mock.
+const COLLECTOR = null;
+
 export const TELEMETRY = {
   storageKey: 'cbs.telemetry.v1',
   maxSessions: 1000,
-  // Collector URL (Cloudflare Worker + D1, server/telemetry/). Sessions are
-  // POSTed here only when the player has opted in (settings.telemetryConsent
-  // === 'granted') — see src/telemetry/store.js `canSend`. null = local only
-  // (localStorage + export/import).
-  endpoint: 'https://chass-telemetry.lishuyustevenli.workers.dev/v1/sessions',
+  // Sessions are POSTed here only when the player has opted in
+  // (settings.telemetryConsent === 'granted') — see src/telemetry/store.js
+  // `canSend`. null = local only (localStorage + export/import).
+  endpoint: COLLECTOR && `${COLLECTOR}/v1/sessions`,
 };
 
 // Public leaderboard (Level 1 wins only), served by the same Worker as
 // telemetry (server/telemetry/src/leaderboard.js). Separate from telemetry
 // consent: a score is sent only when the player presses Submit on the result
-// dialog, and that publishes their nickname and the game's moves.
+// dialog, and that publishes their nickname and the game's moves. null = the
+// menu entry and the submit block are hidden.
 export const LEADERBOARD = {
-  endpoint: 'https://chass-telemetry.lishuyustevenli.workers.dev/v1/scores',
+  endpoint: COLLECTOR && `${COLLECTOR}/v1/scores`,
   nicknameKey: 'cbs.nickname.v1',
   limit: 20,
   timeoutMs: 10000,

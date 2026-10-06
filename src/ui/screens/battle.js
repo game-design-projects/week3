@@ -17,6 +17,7 @@ import { Match } from '../../core/game.js';
 import { buildFen } from '../../core/placement.js';
 import { cleanNickname, NICKNAME_MAX } from '../../core/scores.js';
 import { buildSubmission, loadNickname, saveNickname, submitScore } from '../../leaderboard.js';
+import { leaderboardOnline } from '../../online.js';
 import { randomSeed } from '../../lib/rng.js';
 import { createBoard, piecesFromBoard } from '../board.js';
 import { downloadText, fill, formatDuration, h, pieceImg } from '../dom.js';
@@ -671,7 +672,7 @@ export function mount(root, ctx, params) {
   // ---------------------------------------------------------------- leaderboard (Level 1 wins)
   /** Only a Level 1 checkmate by the player (not free, demo or hotseat) can go on the leaderboard. */
   const leaderboardEligible = (status) =>
-    params.mode === 'level' && !!level && !hotseat && !demo && status.winner === level.playerSide && status.reason === 'checkmate';
+    leaderboardOnline() && params.mode === 'level' && !!level && !hotseat && !demo && status.winner === level.playerSide && status.reason === 'checkmate';
 
   /** Paint the "Submit to the leaderboard" block into `el` from the `lb` state. */
   function paintLeaderboard(el) {

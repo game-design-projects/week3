@@ -4,6 +4,7 @@
 
 import { BALANCE_VERSION, LEVELS, PIECE_NAMES } from '../../config.js';
 import { byArmy, endReasons, filterSessions, learningCurve, pieceStats, summarize, toCSV } from '../../telemetry/stats.js';
+import { telemetryOnline } from '../../online.js';
 import { fill, downloadText, formatDuration, h, pieceImg } from '../dom.js';
 
 const pct = (x) => (x === null || x === undefined ? '–' : `${Math.round(x * 100)}%`);
@@ -200,6 +201,7 @@ export function mount(root, ctx) {
       ),
       ctx.store.available ? null : h('p', { class: 'notice' }, 'Storage is blocked in this browser — data lasts only until this tab closes. Use Export JSON.'),
       (() => {
+        if (!telemetryOnline()) return null;
         const consent = ctx.settings.get().telemetryConsent;
         const text =
           consent === 'granted'

@@ -10,6 +10,7 @@ import { createRecorder } from './telemetry/session.js';
 import { createSettings } from './settings.js';
 import { createSound } from './ui/sound.js';
 import { mountConsent } from './ui/consent.js';
+import { leaderboardOnline, telemetryOnline } from './online.js';
 import { currentFeel } from './ui/fx.js';
 import * as menu from './ui/screens/menu.js';
 import * as battle from './ui/screens/battle.js';
@@ -86,8 +87,8 @@ fsBtn.addEventListener('click', () => {
 
 document.querySelector('[data-testid="nav-menu"]').addEventListener('click', () => go('menu'));
 
-// ---- telemetry consent: a small card over the menu until the player decides
-mountConsent(document.getElementById('consent-overlay'), ctx);
+// ---- telemetry consent: a small card over the menu until the player decides (only when there is a collector to send to)
+if (telemetryOnline()) mountConsent(document.getElementById('consent-overlay'), ctx);
 
 // ---- lifecycle + diagnostics
 window.addEventListener('pagehide', () => ctx.recorder.abandon());
@@ -95,5 +96,5 @@ window.addEventListener('error', (e) => log.error('uncaught', e.message, e.filen
 window.addEventListener('unhandledrejection', (e) => log.error('unhandled rejection', e.reason));
 
 window.__cbs = { ctx, version: APP_VERSION, balance: BALANCE_VERSION, match: null };
-log.info(`Chess Battle Simulator ${APP_VERSION} (balance ${BALANCE_VERSION}); telemetry storage ${store.available ? 'on' : 'memory-only'}`);
+log.info(`Chess Battle Simulator ${APP_VERSION} (balance ${BALANCE_VERSION}); telemetry storage ${store.available ? 'on' : 'memory-only'}; upload ${telemetryOnline() ? 'configured' : 'off (no collector)'}, leaderboard ${leaderboardOnline() ? 'on' : 'off'}`);
 go('menu');

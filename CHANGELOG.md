@@ -5,6 +5,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-06
+
+### Changed
+- **The game now ships without a collector.** The `chass-telemetry` Cloudflare Worker (telemetry + leaderboard) was deleted on 2026-10-06; its D1 database was left in place. `COLLECTOR` in `src/config.js` is `null`, which makes `TELEMETRY.endpoint` and `LEADERBOARD.endpoint` `null`, and the new `src/online.js` (`telemetryOnline()` / `leaderboardOnline()`) is the one place the UI asks whether those features exist.
+- With no collector the UI hides everything that could only fail: the first-run consent card, **Settings → Privacy**, the "Sharing is on/off" note on *Playtest data*, the **Leaderboard** menu entry and the **Submit to the leaderboard** block on the Level 1 win card. Menu numerals follow the visible entries (no gap where Leaderboard was). Sessions are still recorded locally and *Playtest data* still works with Export / Import.
+- The startup log line says whether upload and the leaderboard are configured.
+
+### Added
+- `tests/online.test.js`: the helpers, and that the shipped config has no collector.
+- E2E: `open()` patches the one `COLLECTOR` line to a mock origin so the existing consent and leaderboard tests keep running against intercepted requests; a new test opens the build exactly as shipped and checks the menu, Settings, *Playtest data*, a Level 1 win card and that nothing leaves the page.
+
+### Notes
+- To bring the collector back: redeploy `server/telemetry/` (the code is still in the repo), set `COLLECTOR` to its workers.dev origin and update `tests/online.test.js`.
+
 ## [0.6.0] - 2026-09-27
 
 ### Added

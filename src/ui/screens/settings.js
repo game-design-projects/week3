@@ -1,6 +1,7 @@
 // Settings: presentation preferences and two house rules.
 
 import { AI_PRESETS, CAPTURE_BOUNTY } from '../../config.js';
+import { telemetryOnline } from '../../online.js';
 import { fill, h } from '../dom.js';
 
 export function mount(root, ctx) {
@@ -118,8 +119,8 @@ export function mount(root, ctx) {
       h('h2', { class: 'rule-head' }, 'House rules'),
       h('p', { class: 'fine' }, 'These change the game, so every recorded session notes which rules were on.'),
       toggle('captureBounty', 'Capture bounty', `Capturing an enemy piece earns gold: ${bounty}.`),
-      h('h2', { class: 'rule-head' }, 'Privacy'),
-      privacyToggle(),
+      telemetryOnline() ? h('h2', { class: 'rule-head' }, 'Privacy') : null,
+      telemetryOnline() ? privacyToggle() : null,
       h(
         'div',
         { class: 'actions' },
